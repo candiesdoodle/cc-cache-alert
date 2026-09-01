@@ -5,7 +5,13 @@ export interface TelegramSendOptions {
   disableNotification?: boolean;
 }
 
-export async function sendTelegramMessage(options: TelegramSendOptions): Promise<{ ok: boolean; description?: string }> {
+/**
+ * Sends a message via Telegram Bot API with automatic retries, timeout handling, and markdown fallback.
+ */
+export async function sendTelegramMessage(
+  options: TelegramSendOptions,
+  maxRetries = 3
+): Promise<{ ok: boolean; description?: string; result?: unknown }> {
   const { botToken, chatId, message, disableNotification } = options;
 
   if (!botToken || !chatId) {
@@ -13,32 +19,69 @@ export async function sendTelegramMessage(options: TelegramSendOptions): Promise
   }
 
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        parse_mode: 'Markdown',
-        disable_notification: !!disableNotification,
-      }),
-    });
 
-    const data = (await response.json()) as { ok: boolean; description?: string };
-    return data;
-  } catch (error) {
-    return {
-      ok: false,
-      description: error instanceof Error ? error.message : String(error),
-    };
+  let lastError = 'Unknown error';
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15000), // 15s timeout
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+          parse_mode: 'Markdown',
+          disable_notification: !!disableNotification,
+        }),
+      });
+
+      const data = (await response.json()) as { ok: boolean; description?: string; result?: unknown };
+
+      // If markdown formatting caused an error (e.g. unescaped characters), retry once in plain text
+      if (!data.ok && data.description && data.description.toLowerCase().includes('parse')) {
+        const plainResponse = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(15000),
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: message.replace(/[*_`]/g, ''),
+            disable_notification: !!disableNotification,
+          }),
+        });
+        return (await plainResponse.json()) as { ok: boolean; description?: string; result?: unknown };
+      }
+
+      if (data.ok) {
+        return data;
+      }
+
+      lastError = data.description || `HTTP ${response.status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    if (attempt < maxRetries) {
+      // Exponential backoff: 2s, 4s, 8s
+      const delayMs = attempt * 2000;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
   }
+
+  return {
+    ok: false,
+    description: `Failed after ${maxRetries} attempts: ${lastError}`,
+  };
 }
 
-export async function verifyTelegramCredentials(botToken: string, chatId: string): Promise<{ ok: boolean; botName?: string; error?: string }> {
+export async function verifyTelegramCredentials(
+  botToken: string,
+  chatId: string
+): Promise<{ ok: boolean; botName?: string; error?: string }> {
   try {
     const meUrl = `https://api.telegram.org/bot${botToken}/getMe`;
-    const meRes = await fetch(meUrl);
+    const meRes = await fetch(meUrl, { signal: AbortSignal.timeout(10000) });
     const meData = (await meRes.json()) as { ok: boolean; result?: { username?: string }; description?: string };
 
     if (!meData.ok) {

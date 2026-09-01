@@ -169,7 +169,20 @@ export async function executeTimer(sessionId: string): Promise<void> {
 
   logDaemon(`[Trigger] Telegram API Response: ${JSON.stringify(res)}`);
 
-  // Clean up timer record
+  if (!res.ok) {
+    logDaemon(`[Trigger] Telegram delivery failed (${res.description}). Rescheduling retry in 20s...`);
+    scheduleTimer({
+      sessionId: metadata.sessionId,
+      sessionName: metadata.sessionName,
+      transcriptPath: metadata.transcriptPath,
+      projectName: metadata.projectName,
+      delaySeconds: 20,
+      ttlSeconds: metadata.ttlSeconds,
+    });
+    return;
+  }
+
+  // Clean up timer record only on successful delivery
   cancelTimer(sessionId);
 }
 
