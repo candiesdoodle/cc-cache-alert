@@ -24,6 +24,7 @@ export interface TranscriptEntry {
   customTitle?: string;
   slug?: string;
   message?: {
+    content?: unknown;
     usage?: {
       cache_read_input_tokens?: number;
       cache_creation_input_tokens?: number;

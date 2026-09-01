@@ -2,10 +2,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
-import { TIMERS_DIR, loadConfig, ensureDirs } from './config.js';
+import { TIMERS_DIR, DAEMON_LOG_FILE, loadConfig, ensureDirs } from './config.js';
 import { getTranscriptCacheState, extractSessionName, findActiveClaudeTranscripts } from './transcript.js';
 import { sendTelegramMessage, formatCacheAlertMessage } from './telegram.js';
 import type { TimerMetadata } from './types.js';
+
+export function logDaemon(msg: string): void {
+  ensureDirs();
+  const time = new Date().toISOString();
+  try {
+    fs.appendFileSync(DAEMON_LOG_FILE, `[${time}] ${msg}\n`, 'utf-8');
+  } catch {
+    // ignore
+  }
+}
 
 function getTimerFilePath(sessionId: string): string {
   ensureDirs();
@@ -25,28 +35,33 @@ export function scheduleTimer(options: {
   ttlSeconds: number;
 }): void {
   const { sessionId, sessionName, transcriptPath, projectName, delaySeconds, ttlSeconds } = options;
-  if (delaySeconds <= 0) return;
+  const effectiveDelay = Math.max(1, Math.round(delaySeconds));
 
   // Cancel any existing timer for this session first
   cancelTimer(sessionId);
 
   const timerPath = getTimerFilePath(sessionId);
   const now = Date.now();
-  const fireAt = now + delaySeconds * 1000;
+  const fireAt = now + effectiveDelay * 1000;
 
   // Resolve the path to the CLI index entry point
   const currentFile = fileURLToPath(import.meta.url);
   const cliPath = path.resolve(path.dirname(currentFile), 'index.js');
 
-  const child = spawn(process.execPath, [cliPath, 'internal-timer', sessionId, String(Math.round(delaySeconds))], {
+  const resolvedSessionName = sessionName || extractSessionName(transcriptPath, sessionId);
+
+  ensureDirs();
+  const logFd = fs.openSync(DAEMON_LOG_FILE, 'a');
+
+  const child = spawn(process.execPath, [cliPath, 'internal-timer', sessionId, String(effectiveDelay)], {
     detached: true,
-    stdio: 'ignore',
+    stdio: ['ignore', logFd, logFd],
     env: { ...process.env },
   });
 
   const metadata: TimerMetadata = {
     sessionId,
-    sessionName: sessionName || extractSessionName(transcriptPath, sessionId),
+    sessionName: resolvedSessionName,
     transcriptPath,
     projectName,
     scheduledAt: now,
@@ -57,6 +72,8 @@ export function scheduleTimer(options: {
 
   fs.writeFileSync(timerPath, JSON.stringify(metadata, null, 2), 'utf-8');
   child.unref();
+
+  logDaemon(`[Schedule] Session '${resolvedSessionName}' (${sessionId.slice(0, 8)}) timer set for ${effectiveDelay}s (PID: ${child.pid})`);
 }
 
 /**
@@ -71,6 +88,7 @@ export function cancelTimer(sessionId: string): boolean {
     if (data.pid) {
       try {
         process.kill(data.pid, 'SIGTERM');
+        logDaemon(`[Cancel] Killed timer process PID ${data.pid} for session ${sessionId.slice(0, 8)}`);
       } catch {
         // pid might already be dead
       }
@@ -92,7 +110,10 @@ export function cancelTimer(sessionId: string): boolean {
  */
 export async function executeTimer(sessionId: string): Promise<void> {
   const timerPath = getTimerFilePath(sessionId);
-  if (!fs.existsSync(timerPath)) return;
+  if (!fs.existsSync(timerPath)) {
+    logDaemon(`[Trigger] No timer file found for ${sessionId.slice(0, 8)}`);
+    return;
+  }
 
   let metadata: TimerMetadata;
   try {
@@ -101,51 +122,52 @@ export async function executeTimer(sessionId: string): Promise<void> {
     return;
   }
 
+  logDaemon(`[Trigger] Timer waking up for '${metadata.sessionName}' (${sessionId.slice(0, 8)})`);
+
   const config = loadConfig();
   if (!config.telegram.enabled || !config.telegram.botToken || !config.telegram.chatId) {
+    logDaemon(`[Trigger] Telegram not configured or disabled, skipping alert`);
     cancelTimer(sessionId);
     return;
   }
 
-  // Check the current transcript state to ensure user hasn't replied or session hasn't closed
+  // Check the current transcript state to ensure user hasn't started a NEW turn
   const state = getTranscriptCacheState(
     metadata.transcriptPath,
     metadata.ttlSeconds,
     config.cache.alertThresholdPercent
   );
 
-  // If Claude is working or the cache has already been refreshed after our scheduled turn, skip alert
-  if (state.isWorking) {
+  // If a newer assistant turn finished AFTER this timer was scheduled, skip alert
+  if (state.lastAssistantTime && state.lastAssistantTime.getTime() > metadata.scheduledAt + 3000) {
+    logDaemon(`[Trigger] Skipping alert: new turn finished at ${state.lastAssistantTime.toISOString()} after scheduledAt ${new Date(metadata.scheduledAt).toISOString()}`);
     cancelTimer(sessionId);
     return;
   }
 
-  if (state.lastAssistantTime && state.lastAssistantTime.getTime() > metadata.scheduledAt) {
-    cancelTimer(sessionId);
-    return;
-  }
+  // Send the Telegram notification
+  const remainingMins = Math.max(0, Math.round(state.remainingSeconds / 60));
+  const ttlLabel = metadata.ttlSeconds >= 3600 ? `${metadata.ttlSeconds / 3600}h` : `${metadata.ttlSeconds / 60}m`;
+  const resolvedSessionName = metadata.sessionName || extractSessionName(metadata.transcriptPath, metadata.sessionId);
 
-  // If cache is expiring soon or expired, send the Telegram notification
-  if (state.remainingSeconds > 0) {
-    const remainingMins = Math.round(state.remainingSeconds / 60);
-    const ttlLabel = metadata.ttlSeconds >= 3600 ? `${metadata.ttlSeconds / 3600}h` : `${metadata.ttlSeconds / 60}m`;
-    const resolvedSessionName = metadata.sessionName || extractSessionName(metadata.transcriptPath, metadata.sessionId);
+  const message = formatCacheAlertMessage({
+    project: config.notifications.includeProjectName ? metadata.projectName : undefined,
+    sessionName: config.notifications.includeSessionName ? resolvedSessionName : undefined,
+    remainingMinutes: remainingMins,
+    remainingSeconds: Math.max(0, state.remainingSeconds),
+    ttlLabel,
+  });
 
-    const message = formatCacheAlertMessage({
-      project: config.notifications.includeProjectName ? metadata.projectName : undefined,
-      sessionName: config.notifications.includeSessionName ? resolvedSessionName : undefined,
-      remainingMinutes: remainingMins,
-      remainingSeconds: state.remainingSeconds,
-      ttlLabel,
-    });
+  logDaemon(`[Trigger] Dispatching Telegram message for '${resolvedSessionName}'...`);
 
-    await sendTelegramMessage({
-      botToken: config.telegram.botToken,
-      chatId: config.telegram.chatId,
-      message,
-      disableNotification: !config.notifications.sound,
-    });
-  }
+  const res = await sendTelegramMessage({
+    botToken: config.telegram.botToken,
+    chatId: config.telegram.chatId,
+    message,
+    disableNotification: !config.notifications.sound,
+  });
+
+  logDaemon(`[Trigger] Telegram API Response: ${JSON.stringify(res)}`);
 
   // Clean up timer record
   cancelTimer(sessionId);
@@ -219,24 +241,27 @@ export function restartAllTimers(): { stoppedCount: number; restartedSessions: s
         config.cache.alertThresholdPercent
       );
 
+      // If session is still warm (not expired and not actively in a fresh turn)
       if (!state.isExpired && !state.isWorking && state.remainingSeconds > 0) {
         const thresholdSeconds = config.cache.ttlSeconds * (config.cache.alertThresholdPercent / 100);
         const delaySeconds = state.remainingSeconds - thresholdSeconds;
 
-        if (delaySeconds > 0) {
-          scheduleTimer({
-            sessionId: t.sessionId,
-            sessionName: t.sessionName,
-            transcriptPath: t.transcriptPath,
-            projectName: t.project,
-            delaySeconds,
-            ttlSeconds: config.cache.ttlSeconds,
-          });
-          restartedSessions.push(t.sessionName || t.sessionId.slice(0, 8));
-        }
+        // If delay is positive, schedule countdown. If threshold already reached, schedule immediate 1s trigger.
+        const effectiveDelay = Math.max(1, delaySeconds);
+
+        scheduleTimer({
+          sessionId: t.sessionId,
+          sessionName: t.sessionName,
+          transcriptPath: t.transcriptPath,
+          projectName: t.project,
+          delaySeconds: effectiveDelay,
+          ttlSeconds: config.cache.ttlSeconds,
+        });
+        restartedSessions.push(t.sessionName || t.sessionId.slice(0, 8));
       }
     }
   }
 
+  logDaemon(`[Restart] Stopped ${stoppedCount} timers. Rescheduled: ${restartedSessions.join(', ') || 'none'}`);
   return { stoppedCount, restartedSessions };
 }

@@ -6,6 +6,7 @@ import type { AppConfig } from './types.js';
 export const CONFIG_DIR = path.join(os.homedir(), '.config', 'cc-cache-alert');
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 export const TIMERS_DIR = path.join(CONFIG_DIR, 'timers');
+export const DAEMON_LOG_FILE = path.join(CONFIG_DIR, 'daemon.log');
 
 export const DEFAULT_CONFIG: AppConfig = {
   telegram: {
@@ -43,7 +44,6 @@ export function loadConfig(): AppConfig {
     const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
     const parsed = JSON.parse(data);
 
-    // Support legacy includeSessionId if includeSessionName is missing
     const includeSessionName =
       parsed.notifications?.includeSessionName ??
       parsed.notifications?.includeSessionId ??

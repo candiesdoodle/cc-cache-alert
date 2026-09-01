@@ -5,6 +5,7 @@ import type { TranscriptEntry, ActiveCacheState } from './types.js';
 
 const INITIAL_TAIL_BYTES = 32768; // 32KB
 const SAFETY_MARGIN_SECONDS = 5;
+const IN_FLIGHT_TURN_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Read the last N bytes of a file.
@@ -69,7 +70,27 @@ export function scanTailForState(tail: string): ScannedState | null {
       }
 
       if (entry.type === 'user' && !turnFinished) {
-        return { isWorking: true, lastAssistant: null };
+        // Check if this is a local slash command (e.g. /compact, /rename) that does not produce an LLM turn
+        const rawContent = entry.message?.content;
+        let isSlashCommand = false;
+        if (typeof rawContent === 'string' && rawContent.trim().startsWith('/')) {
+          isSlashCommand = true;
+        }
+
+        // Check if the user message is stale (> 5 mins old)
+        let isStale = false;
+        if (entry.timestamp) {
+          const userTime = new Date(entry.timestamp);
+          if (!Number.isNaN(userTime.getTime()) && Date.now() - userTime.getTime() > IN_FLIGHT_TURN_MAX_AGE_MS) {
+            isStale = true;
+          }
+        }
+
+        if (!isSlashCommand && !isStale) {
+          return { isWorking: true, lastAssistant: null };
+        }
+        // Otherwise ignore this user record and continue looking for the last assistant turn
+        continue;
       }
     } catch {
       continue;

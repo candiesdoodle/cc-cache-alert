@@ -1,17 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { scanTailForState, hasCacheActivity } from '../transcript.js';
+import { scanTailForState } from '../transcript.js';
 
 describe('Transcript Scanner', () => {
   it('detects when Claude is actively working (turn in flight)', () => {
+    const nowIso = new Date().toISOString();
     const tail = [
       '{"type":"assistant","timestamp":"2026-09-01T08:00:00.000Z","message":{"usage":{"cache_read_input_tokens":1000}}}',
-      '{"type":"user","timestamp":"2026-09-01T08:05:00.000Z","message":{"content":"Run cargo test"}}',
+      `{"type":"user","timestamp":"${nowIso}","message":{"content":"Run cargo test"}}`,
     ].join('\n');
 
     const state = scanTailForState(tail);
     expect(state).not.toBeNull();
     expect(state?.isWorking).toBe(true);
     expect(state?.lastAssistant).toBeNull();
+  });
+
+  it('does not get stuck in working state on slash commands like /compact', () => {
+    const nowIso = new Date().toISOString();
+    const tail = [
+      '{"type":"assistant","timestamp":"2026-09-01T08:00:00.000Z","message":{"usage":{"cache_read_input_tokens":1000}}}',
+      `{"type":"user","timestamp":"${nowIso}","message":{"content":"/compact"}}`,
+    ].join('\n');
+
+    const state = scanTailForState(tail);
+    expect(state).not.toBeNull();
+    expect(state?.isWorking).toBe(false);
+    expect(state?.lastAssistant).toEqual(new Date('2026-09-01T08:00:00.000Z'));
   });
 
   it('detects idle turn and extracts latest assistant timestamp with cache activity', () => {
