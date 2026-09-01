@@ -1,19 +1,23 @@
 # cc-cache-alert 🔔
 
-> Telegram alerts before your **Claude Code** prompt cache expires (1-hour & 5-minute TTL) with CLI statusline indicator.
+> Telegram alerts and terminal statusline indicator before your **Claude Code CLI** prompt cache expires (1-hour & 5-minute TTL).
 
-Never let your prompt cache go cold while you step away from your terminal. `cc-cache-alert` tracks your Claude Code session in real time, alerts your phone before cache eviction, and provides an indicator in your terminal statusline.
+Never let your prompt cache go cold while you step away from your terminal. Built specifically for the **Claude Code CLI** (`claude`), `cc-cache-alert` tracks your active Claude terminal sessions in real time, alerts your phone before Anthropic evicts your cached prompt prefix, and provides a live countdown indicator in your terminal statusline.
+
+Saving you **~90% on input token costs** and eliminating cold-start latency across long coding sessions.
 
 ---
 
 ## ⚡ Features
 
+- 💻 **Built for Claude Code CLI:** Seamlessly integrates with Anthropic's official `claude` CLI via native lifecycle hooks.
 - 📲 **Telegram Notifications:** Alerts your phone with the project name, session ID, and remaining time before cache eviction.
 - ⏱️ **Supports 1-Hour & 5-Minute TTL:** Configured for Anthropic's extended 1-hour cache breakpoints (or standard 5m).
 - 📊 **Dynamic Statusline Indicator:**
+  - **Active / Turn in flight:** `Cache 🔔 active`
   - **Idle / Countdown:** `Cache 🔔 in XX m` (e.g. `Cache 🔔 in 34 m`)
-  - **Active / Turn in flight:** `Cache 🔔 in 48 m` (resets to full threshold on each turn)
-  - **Expired:** `Alerted-Cold`
+  - **Alert Dispatched (< 12m left):** `Alerted`
+  - **Cache Expired:** `Alerted-Cold`
   - **Standalone Mode:** Purely cache-focused (no clutter from model name or session cost).
 - 🎯 **Smart Reverse Tail Scanner:** Reads only the last 32 KB of Claude Code transcripts with zero performance overhead.
 - 🔄 **Auto-Cancelling Timers:** As soon as you type or submit a prompt, pending alert timers are automatically canceled.
