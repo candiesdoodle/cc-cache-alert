@@ -123,6 +123,41 @@ export function extractSessionName(transcriptPath: string, fallbackId?: string):
 }
 
 /**
+ * Extracts the clean project directory name from the transcript's cwd field or raw project folder name.
+ */
+export function extractProjectName(transcriptPath: string, rawFolder?: string): string {
+  if (fs.existsSync(transcriptPath)) {
+    const tail = readFileTail(transcriptPath, 65536);
+    if (tail && tail.text) {
+      const lines = tail.text.split('\n').reverse();
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const entry = JSON.parse(trimmed) as { cwd?: string };
+          if (entry.cwd) {
+            const base = path.basename(entry.cwd);
+            if (base && base !== '/' && base !== '.') {
+              return base;
+            }
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
+  }
+
+  if (rawFolder) {
+    const cleaned = rawFolder.replace(/^[\\/-]+/, '');
+    const parts = cleaned.split(/[-/\\]/);
+    return parts[parts.length - 1] || rawFolder;
+  }
+
+  return 'project';
+}
+
+/**
  * Resolve the cache state for a specific transcript file.
  */
 export function getTranscriptCacheState(
@@ -233,7 +268,7 @@ export function findActiveClaudeTranscripts(): Array<{
             const stat = fs.statSync(fullPath);
             const sessionId = path.basename(file, '.jsonl');
             results.push({
-              project: p,
+              project: extractProjectName(fullPath, p),
               sessionId,
               sessionName: extractSessionName(fullPath, sessionId),
               transcriptPath: fullPath,
