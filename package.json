@@ -1,7 +1,7 @@
 {
   "name": "cc-cache-alert",
   "version": "1.0.0",
-  "description": "Telegram alerts before your Claude Code prompt cache expires (1h & 5m TTL).",
+  "description": "Telegram alerts and terminal statusline indicator before your Claude Code CLI prompt cache expires (1h & 5m TTL).",
   "main": "dist/index.js",
   "bin": {
     "cc-cache-alert": "./dist/index.js"
