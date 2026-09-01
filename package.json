@@ -26,6 +26,14 @@
   ],
   "author": "candiesdoodle",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/candiesdoodle/cc-cache-alert.git"
+  },
+  "bugs": {
+    "url": "https://github.com/candiesdoodle/cc-cache-alert/issues"
+  },
+  "homepage": "https://github.com/candiesdoodle/cc-cache-alert#readme",
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/prompts": "^2.4.9",

@@ -132,11 +132,22 @@ Settings are stored at `~/.config/cc-cache-alert/config.json`:
 
 > **Note on `includeSessionName`:** Sends the custom session name set via Claude Code's `/rename` command (or the session slug like `magical-meandering-bird`), making alerts easily identifiable.
 
+## 📸 Screenshots
+
+### 1. Telegram Notification Alert
+![Telegram Notification](assets/3.png)
+
+### 2. Live Terminal Statusline (`ccstatusline` Companion)
+![Statusline Indicator](assets/1.png)
+
+### 3. Interactive Setup & Live Status
+![Setup and Status](assets/2.png)
+
 ---
 
 ## 🙏 Credits & Acknowledgments
 
-- Thanks to [**@sirmalloc**](https://github.com/sirmalloc) for the [**ccstatusline**](https://github.com/sirmalloc/ccstatusline) project.
+- Special credit and thanks to [**@sirmalloc**](https://github.com/sirmalloc) and the [**ccstatusline**](https://github.com/sirmalloc/ccstatusline) project for pioneering prompt cache transcript analysis and the statusline widget ecosystem for the Claude Code CLI.
 
 ---
 
