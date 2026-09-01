@@ -54,7 +54,7 @@ cc-cache-alert install-widget
 - If `cache-timer` is not enabled, it adds `cc-cache-alert` as an additional custom widget on the first line.
 
 > **💡 Suggested Setup:**
-> In `ccstatusline`, we recommend enabling the built-in `cache-timer` widget and placing `cc-cache-alert` right next to it. Together, they display both the live TTL countdown and your Telegram alert timer:
+> In `ccstatusline`, enable the built-in `cache-timer` widget and place `cc-cache-alert` right next to it. Together, they display both the live TTL countdown and your Telegram alert timer:
 > ```text
 > [Sonnet 4.6]  [🟢 54:12]  [Cache 🔔 in 34 m]  [Session $0.42]
 >                 ▲                  ▲
@@ -88,6 +88,9 @@ cc-cache-alert test
 
 # View active Claude sessions, cache countdowns, and timers
 cc-cache-alert status
+
+# Restart background timers and re-scan active sessions
+cc-cache-alert restart
 
 # Add widget to ~/.config/ccstatusline/settings.json
 cc-cache-alert install-widget

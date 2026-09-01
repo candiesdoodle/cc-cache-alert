@@ -3,7 +3,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { TIMERS_DIR, loadConfig, ensureDirs } from './config.js';
-import { getTranscriptCacheState, extractSessionName } from './transcript.js';
+import { getTranscriptCacheState, extractSessionName, findActiveClaudeTranscripts } from './transcript.js';
 import { sendTelegramMessage, formatCacheAlertMessage } from './telegram.js';
 import type { TimerMetadata } from './types.js';
 
@@ -181,4 +181,62 @@ export function listActiveTimers(): TimerMetadata[] {
   }
 
   return results;
+}
+
+/**
+ * Stops all running timers, cleans up timer files, and restarts timers for active sessions.
+ */
+export function restartAllTimers(): { stoppedCount: number; restartedSessions: string[] } {
+  const activeTimers = listActiveTimers();
+  let stoppedCount = 0;
+
+  for (const t of activeTimers) {
+    cancelTimer(t.sessionId);
+    stoppedCount++;
+  }
+
+  ensureDirs();
+  const files = fs.readdirSync(TIMERS_DIR);
+  for (const f of files) {
+    if (f.endsWith('.json')) {
+      try {
+        fs.unlinkSync(path.join(TIMERS_DIR, f));
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  const config = loadConfig();
+  const restartedSessions: string[] = [];
+
+  if (config.telegram.enabled && config.telegram.botToken) {
+    const recentTranscripts = findActiveClaudeTranscripts();
+    for (const t of recentTranscripts) {
+      const state = getTranscriptCacheState(
+        t.transcriptPath,
+        config.cache.ttlSeconds,
+        config.cache.alertThresholdPercent
+      );
+
+      if (!state.isExpired && !state.isWorking && state.remainingSeconds > 0) {
+        const thresholdSeconds = config.cache.ttlSeconds * (config.cache.alertThresholdPercent / 100);
+        const delaySeconds = state.remainingSeconds - thresholdSeconds;
+
+        if (delaySeconds > 0) {
+          scheduleTimer({
+            sessionId: t.sessionId,
+            sessionName: t.sessionName,
+            transcriptPath: t.transcriptPath,
+            projectName: t.project,
+            delaySeconds,
+            ttlSeconds: config.cache.ttlSeconds,
+          });
+          restartedSessions.push(t.sessionName || t.sessionId.slice(0, 8));
+        }
+      }
+    }
+  }
+
+  return { stoppedCount, restartedSessions };
 }

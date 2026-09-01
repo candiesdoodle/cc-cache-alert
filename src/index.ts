@@ -5,7 +5,7 @@ import prompts from 'prompts';
 import { loadConfig, saveConfig, CONFIG_FILE } from './config.js';
 import { sendTelegramMessage, verifyTelegramCredentials } from './telegram.js';
 import { installClaudeHooks, uninstallClaudeHooks, areHooksInstalled } from './hooks.js';
-import { scheduleTimer, cancelTimer, executeTimer, listActiveTimers } from './timer-daemon.js';
+import { scheduleTimer, cancelTimer, executeTimer, listActiveTimers, restartAllTimers } from './timer-daemon.js';
 import { getTranscriptCacheState, findActiveClaudeTranscripts, extractSessionName } from './transcript.js';
 import {
   renderWidget,
@@ -22,7 +22,8 @@ const program = new Command();
 program
   .name('cc-cache-alert')
   .description('Telegram notifications before your Claude Code prompt cache expires')
-  .version('1.0.0');
+  .version('1.0.0')
+  .addHelpText('after', `\nConfiguration:\n  Config file: ${CONFIG_FILE}\n`);
 
 async function readStdin(): Promise<string> {
   let input = '';
@@ -145,7 +146,8 @@ program
       }
     }
 
-    console.log(pc.cyan('\n🎉 Setup complete! You are ready to go.\n'));
+    console.log(pc.cyan('\n🎉 Setup complete! You are ready to go.'));
+    console.log(pc.gray(`Configuration file: ${CONFIG_FILE}\n`));
   });
 
 /**
@@ -176,7 +178,7 @@ program
  */
 program
   .command('statusline')
-  .description('Render standalone statusline for Claude Code')
+  .description('Render standalone cache statusline for Claude Code')
   .action(async () => {
     let payload: StdinPayload | undefined;
     const input = await readStdin();
@@ -258,11 +260,12 @@ program
     const widgetInstalled = isWidgetInstalledInCcstatusline();
 
     console.log(pc.bold(pc.cyan('\n📊 cc-cache-alert Status\n')));
-    console.log(`• Telegram:        ${config.telegram.enabled && config.telegram.botToken ? pc.green('Configured') : pc.red('Not configured')}`);
-    console.log(`• Claude Hooks:    ${hooksActive ? pc.green('Installed (~/.claude/settings.json)') : pc.yellow('Not installed')}`);
+    console.log(`• Telegram:          ${config.telegram.enabled && config.telegram.botToken ? pc.green('Configured') : pc.red('Not configured')}`);
+    console.log(`• Claude Hooks:      ${hooksActive ? pc.green('Installed (~/.claude/settings.json)') : pc.yellow('Not installed')}`);
     console.log(`• Statusline Widget: ${widgetInstalled ? pc.green('Installed in ccstatusline') : pc.gray('Not installed')}`);
-    console.log(`• Cache TTL:       ${pc.white(config.cache.ttlSeconds >= 3600 ? `${config.cache.ttlSeconds / 3600}h` : `${config.cache.ttlSeconds / 60}m`)}`);
-    console.log(`• Alert Threshold: ${pc.white(`${config.cache.alertThresholdPercent}% remaining`)} (~${Math.round((config.cache.ttlSeconds * config.cache.alertThresholdPercent) / 6000)}m)`);
+    console.log(`• Cache TTL:         ${pc.white(config.cache.ttlSeconds >= 3600 ? `${config.cache.ttlSeconds / 3600}h` : `${config.cache.ttlSeconds / 60}m`)}`);
+    console.log(`• Alert Threshold:   ${pc.white(`${config.cache.alertThresholdPercent}% remaining`)} (~${Math.round((config.cache.ttlSeconds * config.cache.alertThresholdPercent) / 6000)}m)`);
+    console.log(`• Config File:       ${pc.gray(CONFIG_FILE)}`);
 
     const activeTimers = listActiveTimers();
     console.log(pc.bold('\n🕒 Pending Background Timers:'));
@@ -301,6 +304,22 @@ program
   });
 
 /**
+ * Restart Command
+ */
+program
+  .command('restart')
+  .description('Restart background timer daemons and re-scan active sessions')
+  .action(() => {
+    const res = restartAllTimers();
+    console.log(pc.green(`✓ Stopped ${res.stoppedCount} active timer daemon(s).`));
+    if (res.restartedSessions.length > 0) {
+      console.log(pc.green(`✓ Re-scheduled background monitoring for: ${res.restartedSessions.join(', ')}`));
+    } else {
+      console.log(pc.gray('  (No active warm sessions require timer scheduling)'));
+    }
+  });
+
+/**
  * Install / Uninstall Hooks
  */
 program
@@ -328,10 +347,10 @@ program
   });
 
 /**
- * Claude Code Hook Handlers
+ * Claude Code Hook Handlers (Hidden from public help)
  */
 program
-  .command('on-stop')
+  .command('on-stop', { hidden: true })
   .description('Internal hook called when Claude finishes an assistant turn')
   .action(async () => {
     const config = loadConfig();
@@ -382,7 +401,7 @@ program
   });
 
 program
-  .command('on-submit')
+  .command('on-submit', { hidden: true })
   .description('Internal hook called when user submits a new prompt')
   .action(async () => {
     const inputPayload = await readStdin();
@@ -409,10 +428,10 @@ program
   });
 
 /**
- * Internal background timer runner
+ * Internal background timer runner (Hidden from public help)
  */
 program
-  .command('internal-timer <sessionId> <delaySeconds>')
+  .command('internal-timer <sessionId> <delaySeconds>', { hidden: true })
   .description('Internal background timer worker')
   .action(async (sessionId: string, delaySecondsStr: string) => {
     const delaySec = Number.parseInt(delaySecondsStr, 10);
