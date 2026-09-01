@@ -56,19 +56,14 @@ export function renderWidget(payload?: StdinPayload): string {
     config.cache.alertThresholdPercent
   );
 
-  const initialThresholdMins = getInitialAlertThresholdMinutes(
-    config.cache.ttlSeconds,
-    config.cache.alertThresholdPercent
-  );
-
   // 1. When cold (cache expired)
   if (state.isExpired) {
     return 'Alerted-Cold';
   }
 
-  // 2. When hot (turn actively in flight): reset to full threshold
+  // 2. When hot (turn actively in flight): display "Cache 🔔 active"
   if (state.isWorking) {
-    return `Cache 🔔 in ${initialThresholdMins} m`;
+    return 'Cache 🔔 active';
   }
 
   // 3. When idle: check if background timer exists
@@ -128,11 +123,6 @@ export function renderStandaloneStatusline(payload?: StdinPayload): string {
     config.cache.alertThresholdPercent
   );
 
-  const initialThresholdMins = getInitialAlertThresholdMinutes(
-    config.cache.ttlSeconds,
-    config.cache.alertThresholdPercent
-  );
-
   const parts: string[] = [];
 
   if (state.isExpired) {
@@ -140,7 +130,7 @@ export function renderStandaloneStatusline(payload?: StdinPayload): string {
     parts.push(pc.red('Alerted-Cold'));
   } else if (state.isWorking) {
     parts.push(pc.green('🔥 Cache: Hot (Refreshing)'));
-    parts.push(pc.cyan(`Cache 🔔 in ${initialThresholdMins} m`));
+    parts.push(pc.cyan('Cache 🔔 active'));
   } else {
     const remainingMins = Math.round(state.remainingSeconds / 60);
     const ttlLabel = config.cache.ttlSeconds >= 3600 ? `${config.cache.ttlSeconds / 3600}h` : `${config.cache.ttlSeconds / 60}m`;

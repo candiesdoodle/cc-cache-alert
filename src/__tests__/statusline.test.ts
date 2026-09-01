@@ -3,11 +3,9 @@ import { renderWidget, renderStandaloneStatusline, getInitialAlertThresholdMinut
 
 describe('Statusline Module', () => {
   it('calculates initial threshold minutes correctly', () => {
-    // 3600s TTL (1h) with 20% alert threshold -> 80% elapsed = 2880s = 48 mins
     const mins1h = getInitialAlertThresholdMinutes(3600, 20);
     expect(mins1h).toBe(48);
 
-    // 300s TTL (5m) with 20% alert threshold -> 80% elapsed = 240s = 4 mins
     const mins5m = getInitialAlertThresholdMinutes(300, 20);
     expect(mins5m).toBe(4);
   });
@@ -18,7 +16,6 @@ describe('Statusline Module', () => {
       cost: { total_cost_usd: 12.34 },
     });
 
-    // Must NOT contain model name or cost
     expect(output).not.toContain('Claude 3.7 Sonnet');
     expect(output).not.toContain('$12.34');
     expect(output).toContain('Cache:');
