@@ -2,7 +2,7 @@
 
 > Telegram alerts before your **Claude Code** prompt cache expires (1-hour & 5-minute TTL) with CLI statusline indicator.
 
-Never let your prompt cache go cold while you step away from your terminal. `cc-cache-alert` monitors your Claude Code session in real time, sends an alert to your phone before cache eviction, and provides an indicator in your terminal statusline.
+Never let your prompt cache go cold while you step away from your terminal. `cc-cache-alert` tracks your Claude Code session in real time, alerts your phone before cache eviction, and provides an indicator in your terminal statusline.
 
 ---
 
@@ -10,12 +10,14 @@ Never let your prompt cache go cold while you step away from your terminal. `cc-
 
 - 📲 **Telegram Notifications:** Alerts your phone with the project name, session ID, and remaining time before cache eviction.
 - ⏱️ **Supports 1-Hour & 5-Minute TTL:** Configured for Anthropic's extended 1-hour cache breakpoints (or standard 5m).
-- 📊 **CLI Statusline Indicator:** 
-  - Plugs natively into `ccstatusline` via `cc-cache-alert install-widget`.
-  - Also works as a standalone statusline for users without `ccstatusline`.
+- 📊 **Dynamic Statusline Indicator:**
+  - **Idle / Countdown:** `Cache 🔔 in XX m` (e.g. `Cache 🔔 in 34 m`)
+  - **Active / Turn in flight:** `Cache 🔔 in 48 m` (resets to full threshold on each turn)
+  - **Expired:** `Alerted-Cold`
+  - **Standalone Mode:** Purely cache-focused (no clutter from model name or session cost).
 - 🎯 **Smart Reverse Tail Scanner:** Reads only the last 32 KB of Claude Code transcripts with zero performance overhead.
 - 🔄 **Auto-Cancelling Timers:** As soon as you type or submit a prompt, pending alert timers are automatically canceled.
-- ⚙️ **One-Command Setup Wizard:** Interactive setup wizard that configures Telegram credentials and installs Claude Code hooks in `~/.claude/settings.json`.
+- ⚙️ **One-Command Setup Wizard:** Interactive setup wizard that configures Telegram credentials, hooks, and statusline widgets.
 
 ---
 
@@ -36,7 +38,7 @@ The wizard will:
 
 ---
 
-## 📊 Statusline Integration (Choice A)
+## 📊 Statusline Integration
 
 ### With `ccstatusline`:
 Run:
@@ -45,12 +47,12 @@ cc-cache-alert install-widget
 ```
 This automatically places the indicator right next to your `cache-timer` in `~/.config/ccstatusline/settings.json`. It will render:
 ```text
-[Sonnet 4.6]  [🟢 54:12]  [🔔 34m]  [Session $0.42]
+[Sonnet 4.6]  [🟢 54:12]  [Cache 🔔 in 34 m]  [Session $0.42]
                             ▲
-                            └── Time until Telegram alert triggers
+                            └── Exact minutes until Telegram alert fires
 ```
 
-### Without `ccstatusline` (Standalone Statusline):
+### Without `ccstatusline` (Standalone Mode):
 In `~/.claude/settings.json`:
 ```json
 "statusLine": {
@@ -58,9 +60,9 @@ In `~/.claude/settings.json`:
   "command": "cc-cache-alert statusline"
 }
 ```
-Renders a clean, lightweight statusline directly from Claude Code:
+Renders strictly cache-related information:
 ```text
-Claude 3.7 Sonnet │ 🟢 Cache: ~52m │ 🔔 34m │ $0.42
+🟢 Cache: ~52 m / 1h │ Cache 🔔 in 40 m
 ```
 
 ---

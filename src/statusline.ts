@@ -19,6 +19,14 @@ export interface StdinPayload {
 }
 
 /**
+ * Calculate the full threshold duration in minutes (e.g. 48m for 1h TTL with 20% alert threshold)
+ */
+export function getInitialAlertThresholdMinutes(ttlSeconds: number, alertThresholdPercent: number): number {
+  const alertDelaySeconds = ttlSeconds * (1 - alertThresholdPercent / 100);
+  return Math.max(1, Math.round(alertDelaySeconds / 60));
+}
+
+/**
  * Render compact widget string (for ccstatusline or other custom statusline injectors)
  */
 export function renderWidget(payload?: StdinPayload): string {
@@ -42,7 +50,28 @@ export function renderWidget(payload?: StdinPayload): string {
     return '';
   }
 
-  // 1. Check if an active timer file exists for this session
+  const state = getTranscriptCacheState(
+    transcriptPath,
+    config.cache.ttlSeconds,
+    config.cache.alertThresholdPercent
+  );
+
+  const initialThresholdMins = getInitialAlertThresholdMinutes(
+    config.cache.ttlSeconds,
+    config.cache.alertThresholdPercent
+  );
+
+  // 1. When cold (cache expired)
+  if (state.isExpired) {
+    return 'Alerted-Cold';
+  }
+
+  // 2. When hot (turn actively in flight): reset to full threshold
+  if (state.isWorking) {
+    return `Cache 🔔 in ${initialThresholdMins} m`;
+  }
+
+  // 3. When idle: check if background timer exists
   const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const timerPath = path.join(TIMERS_DIR, `${safeId}.json`);
 
@@ -54,54 +83,32 @@ export function renderWidget(payload?: StdinPayload): string {
 
       if (diffMs > 0) {
         const diffMins = Math.max(1, Math.round(diffMs / 60000));
-        return `🔔 ${diffMins}m`;
+        return `Cache 🔔 in ${diffMins} m`;
       } else {
-        return `📲 Alerted`;
+        return 'Alerted';
       }
     } catch {
-      // fallback to transcript inspection
+      // fallback
     }
   }
 
-  // 2. Fallback to calculating from transcript state
-  const state = getTranscriptCacheState(
-    transcriptPath,
-    config.cache.ttlSeconds,
-    config.cache.alertThresholdPercent
-  );
-
-  if (state.isWorking) {
-    return '🔥 Hot';
-  }
-
-  if (state.isExpired) {
-    return '❄️ Cold';
-  }
-
+  // 4. Fallback calculation based on elapsed time from last assistant turn
   const thresholdSeconds = config.cache.ttlSeconds * (config.cache.alertThresholdPercent / 100);
   const remainingUntilAlert = state.remainingSeconds - thresholdSeconds;
 
   if (remainingUntilAlert > 0) {
     const mins = Math.max(1, Math.round(remainingUntilAlert / 60));
-    return `🔔 ${mins}m`;
+    return `Cache 🔔 in ${mins} m`;
   } else {
-    return `📲 Alerted`;
+    return 'Alerted';
   }
 }
 
 /**
- * Render a complete, standalone statusline (for users who do NOT have ccstatusline)
+ * Render a standalone statusline sticking strictly to cache-related info
  */
 export function renderStandaloneStatusline(payload?: StdinPayload): string {
   const config = loadConfig();
-  const widgetText = renderWidget(payload);
-
-  let modelName = 'Claude';
-  if (payload?.model?.display_name) {
-    modelName = payload.model.display_name;
-  } else if (payload?.model?.id) {
-    modelName = payload.model.id.replace('claude-', '').replace(/-\d{8}$/, '');
-  }
 
   let transcriptPath = payload?.transcript_path || payload?.transcriptPath;
   if (!transcriptPath) {
@@ -111,32 +118,43 @@ export function renderStandaloneStatusline(payload?: StdinPayload): string {
     }
   }
 
+  if (!transcriptPath) {
+    return pc.gray('Cache: No active session');
+  }
+
+  const state = getTranscriptCacheState(
+    transcriptPath,
+    config.cache.ttlSeconds,
+    config.cache.alertThresholdPercent
+  );
+
+  const initialThresholdMins = getInitialAlertThresholdMinutes(
+    config.cache.ttlSeconds,
+    config.cache.alertThresholdPercent
+  );
+
   const parts: string[] = [];
-  parts.push(pc.bold(pc.cyan(modelName)));
 
-  if (transcriptPath) {
-    const state = getTranscriptCacheState(
-      transcriptPath,
-      config.cache.ttlSeconds,
-      config.cache.alertThresholdPercent
-    );
+  if (state.isExpired) {
+    parts.push(pc.gray('❄️ Cache: Expired'));
+    parts.push(pc.red('Alerted-Cold'));
+  } else if (state.isWorking) {
+    parts.push(pc.green('🔥 Cache: Hot (Refreshing)'));
+    parts.push(pc.cyan(`Cache 🔔 in ${initialThresholdMins} m`));
+  } else {
+    const remainingMins = Math.round(state.remainingSeconds / 60);
+    const ttlLabel = config.cache.ttlSeconds >= 3600 ? `${config.cache.ttlSeconds / 3600}h` : `${config.cache.ttlSeconds / 60}m`;
+    const widgetBadge = renderWidget(payload);
 
-    if (state.isWorking) {
-      parts.push(pc.green('🔥 Cache: Hot'));
-    } else if (state.isExpired) {
-      parts.push(pc.gray('❄️ Cache: Cold'));
+    if (state.isExpiringSoon) {
+      parts.push(pc.red(`🔴 Cache: ~${remainingMins} m / ${ttlLabel}`));
     } else {
-      const remainingMins = Math.round(state.remainingSeconds / 60);
-      parts.push(pc.green(`🟢 Cache: ~${remainingMins}m`));
+      parts.push(pc.green(`🟢 Cache: ~${remainingMins} m / ${ttlLabel}`));
     }
-  }
 
-  if (widgetText) {
-    parts.push(pc.yellow(widgetText));
-  }
-
-  if (payload?.cost?.total_cost_usd !== undefined) {
-    parts.push(pc.magenta(`$${payload.cost.total_cost_usd.toFixed(2)}`));
+    if (widgetBadge) {
+      parts.push(pc.yellow(widgetBadge));
+    }
   }
 
   return parts.join(pc.gray(' │ '));
@@ -190,7 +208,7 @@ export function installWidgetInCcstatusline(): { success: boolean; message: stri
       rawValue: false
     };
 
-    // Try to place it immediately after cache-timer on the first line
+    // Place immediately after cache-timer on the first line
     const line0 = settings.lines[0] || [];
     const cacheTimerIndex = line0.findIndex((item: { type?: string }) => item.type === 'cache-timer');
 
