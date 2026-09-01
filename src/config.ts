@@ -20,7 +20,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   notifications: {
     sound: true,
     includeProjectName: true,
-    includeSessionId: true,
+    includeSessionName: true,
   },
 };
 
@@ -42,10 +42,21 @@ export function loadConfig(): AppConfig {
   try {
     const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
     const parsed = JSON.parse(data);
+
+    // Support legacy includeSessionId if includeSessionName is missing
+    const includeSessionName =
+      parsed.notifications?.includeSessionName ??
+      parsed.notifications?.includeSessionId ??
+      DEFAULT_CONFIG.notifications.includeSessionName;
+
     return {
       telegram: { ...DEFAULT_CONFIG.telegram, ...parsed.telegram },
       cache: { ...DEFAULT_CONFIG.cache, ...parsed.cache },
-      notifications: { ...DEFAULT_CONFIG.notifications, ...parsed.notifications },
+      notifications: {
+        ...DEFAULT_CONFIG.notifications,
+        ...parsed.notifications,
+        includeSessionName,
+      },
     };
   } catch {
     return { ...DEFAULT_CONFIG };

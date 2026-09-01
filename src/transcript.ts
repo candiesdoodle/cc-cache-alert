@@ -79,6 +79,50 @@ export function scanTailForState(tail: string): ScannedState | null {
 }
 
 /**
+ * Extracts the user-renamed session name (set via /rename) or the auto-generated session slug.
+ */
+export function extractSessionName(transcriptPath: string, fallbackId?: string): string {
+  if (!fs.existsSync(transcriptPath)) {
+    return fallbackId ? fallbackId.slice(0, 8) : 'unknown';
+  }
+
+  const tail = readFileTail(transcriptPath, 131072);
+  if (!tail || !tail.text) {
+    return fallbackId ? fallbackId.slice(0, 8) : 'unknown';
+  }
+
+  const lines = tail.text.split('\n').reverse();
+  let foundSlug: string | undefined;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    try {
+      const entry = JSON.parse(trimmed) as TranscriptEntry;
+
+      // 1. User-assigned custom title via /rename
+      if (entry.type === 'custom-title' && entry.customTitle) {
+        return entry.customTitle;
+      }
+
+      // 2. Auto-generated friendly slug (e.g. "magical-meandering-bird")
+      if (!foundSlug && entry.slug) {
+        foundSlug = entry.slug;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  if (foundSlug) {
+    return foundSlug;
+  }
+
+  return fallbackId ? fallbackId.slice(0, 8) : 'unknown';
+}
+
+/**
  * Resolve the cache state for a specific transcript file.
  */
 export function getTranscriptCacheState(
@@ -160,6 +204,7 @@ export function getTranscriptCacheState(
 export function findActiveClaudeTranscripts(): Array<{
   project: string;
   sessionId: string;
+  sessionName: string;
   transcriptPath: string;
   mtime: Date;
 }> {
@@ -169,6 +214,7 @@ export function findActiveClaudeTranscripts(): Array<{
   const results: Array<{
     project: string;
     sessionId: string;
+    sessionName: string;
     transcriptPath: string;
     mtime: Date;
   }> = [];
@@ -185,9 +231,11 @@ export function findActiveClaudeTranscripts(): Array<{
           const fullPath = path.join(pPath, file);
           try {
             const stat = fs.statSync(fullPath);
+            const sessionId = path.basename(file, '.jsonl');
             results.push({
               project: p,
-              sessionId: path.basename(file, '.jsonl'),
+              sessionId,
+              sessionName: extractSessionName(fullPath, sessionId),
               transcriptPath: fullPath,
               mtime: stat.mtime,
             });

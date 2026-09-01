@@ -2,7 +2,7 @@
 
 > Telegram alerts and terminal statusline indicator before your **Claude Code CLI** prompt cache expires (1-hour & 5-minute TTL).
 
-Never let your prompt cache go cold while you step away from your terminal. Built specifically for the **Claude Code CLI** (`claude`) and inspired by the prompt cache inspection techniques pioneered by [**ccstatusline**](https://github.com/sirmalloc/ccstatusline) (by [@sirmalloc](https://github.com/sirmalloc)), `cc-cache-alert` tracks your active Claude terminal sessions in real time, alerts your phone before Anthropic evicts your cached prompt prefix, and provides a companion countdown indicator for your terminal statusline.
+Never let your prompt cache go cold while you step away from your terminal. Built specifically for the **Claude Code CLI** (`claude`) and inspired by the prompt cache inspection techniques in [**ccstatusline**](https://github.com/sirmalloc/ccstatusline)), `cc-cache-alert` tracks your active Claude terminal sessions in real time, alerts your phone before Anthropic evicts your cached prompt prefix, and provides a companion countdown indicator for your terminal statusline.
 
 Saving you **~90% on input token costs** and eliminating cold-start latency across long coding sessions.
 
@@ -10,7 +10,7 @@ Saving you **~90% on input token costs** and eliminating cold-start latency acro
 
 ## ⚡ Features
 
-- 💻 **Built for Claude Code CLI:** Seamlessly integrates with Anthropic's official `claude` CLI via native lifecycle hooks.
+- 💻 **Built for Claude Code CLI:** Seamlessly integrates with official `claude code` CLI via native lifecycle hooks.
 - 🧩 **ccstatusline Companion:** Integrates out of the box with [**ccstatusline**](https://github.com/sirmalloc/ccstatusline) via a dedicated companion widget (`cc-cache-alert install-widget`), or functions as a standalone statusline for users without it.
 - 📲 **Telegram Notifications:** Alerts your phone with the project name, session ID, and remaining time before cache eviction.
 - ⏱️ **Supports 1-Hour & 5-Minute TTL:** Configured for Anthropic's extended 1-hour cache breakpoints (or standard 5m).
@@ -50,12 +50,17 @@ Run:
 ```bash
 cc-cache-alert install-widget
 ```
-This automatically places the indicator right next to your `cache-timer` in `~/.config/ccstatusline/settings.json`. It will render:
-```text
-[Sonnet 4.6]  [🟢 54:12]  [Cache 🔔 in 34 m]  [Session $0.42]
-                            ▲
-                            └── Exact minutes until Telegram alert fires
-```
+- If the `cache-timer` widget is enabled in `ccstatusline`, it automatically places `cc-cache-alert` right next to it on the first line.
+- If `cache-timer` is not enabled, it adds `cc-cache-alert` as an additional custom widget on the first line.
+
+> **💡 Suggested Setup:**
+> In `ccstatusline`, we recommend enabling the built-in `cache-timer` widget and placing `cc-cache-alert` right next to it. Together, they display both the live TTL countdown and your Telegram alert timer:
+> ```text
+> [Sonnet 4.6]  [🟢 54:12]  [Cache 🔔 in 34 m]  [Session $0.42]
+>                 ▲                  ▲
+>                 │                  └── cc-cache-alert (time until Telegram alert)
+>                 └───────────────────── ccstatusline cache-timer (live TTL countdown)
+> ```
 
 ### Without `ccstatusline` (Standalone Mode):
 In `~/.claude/settings.json`:
@@ -117,16 +122,18 @@ Settings are stored at `~/.config/cc-cache-alert/config.json`:
   "notifications": {
     "sound": true,
     "includeProjectName": true,
-    "includeSessionId": true
+    "includeSessionName": true
   }
 }
 ```
+
+> **Note on `includeSessionName`:** Sends the custom session name set via Claude Code's `/rename` command (or the session slug like `magical-meandering-bird`), making alerts easily identifiable.
 
 ---
 
 ## 🙏 Credits & Acknowledgments
 
-- Special credit and thanks to [**@sirmalloc**](https://github.com/sirmalloc) and the [**ccstatusline**](https://github.com/sirmalloc/ccstatusline) project for pioneering prompt cache transcript analysis and the statusline widget ecosystem for the Claude Code CLI.
+- Thanks to [**@sirmalloc**](https://github.com/sirmalloc) for the [**ccstatusline**](https://github.com/sirmalloc/ccstatusline) project.
 
 ---
 

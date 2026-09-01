@@ -198,19 +198,23 @@ export function installWidgetInCcstatusline(): { success: boolean; message: stri
       rawValue: false
     };
 
-    // Place immediately after cache-timer on the first line
+    // If cache-timer widget is present, place immediately next to it.
+    // Otherwise, add as an additional custom widget on the first line.
     const line0 = settings.lines[0] || [];
     const cacheTimerIndex = line0.findIndex((item: { type?: string }) => item.type === 'cache-timer');
 
+    let message = '';
     if (cacheTimerIndex !== -1) {
       line0.splice(cacheTimerIndex + 1, 0, widgetEntry);
+      message = 'Successfully added cc-cache-alert widget right next to cache-timer on line 1!';
     } else {
       line0.push(widgetEntry);
+      message = 'Added cc-cache-alert widget as an additional custom widget on line 1 (Tip: enable cache-timer in ccstatusline for live TTL countdown).';
     }
 
     settings.lines[0] = line0;
     fs.writeFileSync(CCSTATUSLINE_SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
-    return { success: true, message: 'Successfully added cc-cache-alert widget to ccstatusline!' };
+    return { success: true, message };
   } catch (err) {
     return { success: false, message: `Failed to update ccstatusline settings: ${String(err)}` };
   }

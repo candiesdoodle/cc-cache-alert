@@ -6,7 +6,7 @@ import { loadConfig, saveConfig, CONFIG_FILE } from './config.js';
 import { sendTelegramMessage, verifyTelegramCredentials } from './telegram.js';
 import { installClaudeHooks, uninstallClaudeHooks, areHooksInstalled } from './hooks.js';
 import { scheduleTimer, cancelTimer, executeTimer, listActiveTimers } from './timer-daemon.js';
-import { getTranscriptCacheState, findActiveClaudeTranscripts } from './transcript.js';
+import { getTranscriptCacheState, findActiveClaudeTranscripts, extractSessionName } from './transcript.js';
 import {
   renderWidget,
   renderStandaloneStatusline,
@@ -271,7 +271,8 @@ program
     } else {
       for (const t of activeTimers) {
         const remainingSec = Math.max(0, Math.round((t.fireAt - Date.now()) / 1000));
-        console.log(`  - [PID ${t.pid}] ${pc.cyan(t.projectName)} (Session: ${t.sessionId.slice(0, 8)}): Alert in ${pc.yellow(`${Math.round(remainingSec / 60)}m ${remainingSec % 60}s`)}`);
+        const sessionDisplay = t.sessionName ? `${t.sessionName} (${t.sessionId.slice(0, 8)})` : t.sessionId.slice(0, 8);
+        console.log(`  - [PID ${t.pid}] ${pc.cyan(t.projectName)} (Session: ${sessionDisplay}): Alert in ${pc.yellow(`${Math.round(remainingSec / 60)}m ${remainingSec % 60}s`)}`);
       }
     }
 
@@ -292,7 +293,8 @@ program
         } else {
           statusStr = pc.cyan(`🟢 WARM (~${Math.round(state.remainingSeconds / 60)}m left)`);
         }
-        console.log(`  - ${pc.bold(t.project)} [${t.sessionId.slice(0, 8)}]: ${statusStr}`);
+        const sessionLabel = t.sessionName || t.sessionId.slice(0, 8);
+        console.log(`  - ${pc.bold(t.project)} [${sessionLabel}]: ${statusStr}`);
       }
     }
     console.log('');
@@ -367,9 +369,11 @@ program
 
     // Delay until remaining time hits the threshold (e.g. 80% elapsed / 48 mins)
     const alertDelaySeconds = Math.max(1, state.remainingSeconds - (config.cache.ttlSeconds * (config.cache.alertThresholdPercent / 100)));
+    const sessionName = extractSessionName(transcriptPath, sessionId);
 
     scheduleTimer({
       sessionId,
+      sessionName,
       transcriptPath,
       projectName,
       delaySeconds: alertDelaySeconds,

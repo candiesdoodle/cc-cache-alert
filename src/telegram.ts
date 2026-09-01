@@ -63,19 +63,22 @@ export async function verifyTelegramCredentials(botToken: string, chatId: string
 
 export function formatCacheAlertMessage(opts: {
   project?: string;
+  sessionName?: string;
   sessionId?: string;
   remainingMinutes: number;
   remainingSeconds: number;
   ttlLabel: string;
 }): string {
-  const { project, sessionId, remainingMinutes, remainingSeconds, ttlLabel } = opts;
+  const { project, sessionName, sessionId, remainingMinutes, remainingSeconds, ttlLabel } = opts;
 
   let msg = `⚠️ *Claude Code Prompt Cache Expiring Soon!*\n\n`;
   if (project) {
     msg += `📁 *Project:* \`${project}\`\n`;
   }
-  if (sessionId) {
-    msg += `🆔 *Session:* \`${sessionId.slice(0, 8)}\`\n`;
+
+  const displaySession = sessionName || (sessionId ? sessionId.slice(0, 8) : undefined);
+  if (displaySession) {
+    msg += `💬 *Session:* \`${displaySession}\`\n`;
   }
 
   const timeStr = remainingMinutes > 0 ? `~${remainingMinutes}m` : `${remainingSeconds}s`;

@@ -3,7 +3,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { TIMERS_DIR, loadConfig, ensureDirs } from './config.js';
-import { getTranscriptCacheState } from './transcript.js';
+import { getTranscriptCacheState, extractSessionName } from './transcript.js';
 import { sendTelegramMessage, formatCacheAlertMessage } from './telegram.js';
 import type { TimerMetadata } from './types.js';
 
@@ -18,12 +18,13 @@ function getTimerFilePath(sessionId: string): string {
  */
 export function scheduleTimer(options: {
   sessionId: string;
+  sessionName?: string;
   transcriptPath: string;
   projectName: string;
   delaySeconds: number;
   ttlSeconds: number;
 }): void {
-  const { sessionId, transcriptPath, projectName, delaySeconds, ttlSeconds } = options;
+  const { sessionId, sessionName, transcriptPath, projectName, delaySeconds, ttlSeconds } = options;
   if (delaySeconds <= 0) return;
 
   // Cancel any existing timer for this session first
@@ -45,6 +46,7 @@ export function scheduleTimer(options: {
 
   const metadata: TimerMetadata = {
     sessionId,
+    sessionName: sessionName || extractSessionName(transcriptPath, sessionId),
     transcriptPath,
     projectName,
     scheduledAt: now,
@@ -127,10 +129,11 @@ export async function executeTimer(sessionId: string): Promise<void> {
   if (state.remainingSeconds > 0) {
     const remainingMins = Math.round(state.remainingSeconds / 60);
     const ttlLabel = metadata.ttlSeconds >= 3600 ? `${metadata.ttlSeconds / 3600}h` : `${metadata.ttlSeconds / 60}m`;
+    const resolvedSessionName = metadata.sessionName || extractSessionName(metadata.transcriptPath, metadata.sessionId);
 
     const message = formatCacheAlertMessage({
       project: config.notifications.includeProjectName ? metadata.projectName : undefined,
-      sessionId: config.notifications.includeSessionId ? metadata.sessionId : undefined,
+      sessionName: config.notifications.includeSessionName ? resolvedSessionName : undefined,
       remainingMinutes: remainingMins,
       remainingSeconds: state.remainingSeconds,
       ttlLabel,

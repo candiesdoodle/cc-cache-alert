@@ -11,7 +11,8 @@ export interface AppConfig {
   notifications: {
     sound: boolean;
     includeProjectName: boolean;
-    includeSessionId: boolean;
+    includeSessionName: boolean; // sends session name (from /rename or slug)
+    includeSessionId?: boolean; // legacy backward-compatibility alias
   };
 }
 
@@ -20,6 +21,8 @@ export interface TranscriptEntry {
   timestamp?: string;
   isSidechain?: boolean;
   isApiErrorMessage?: boolean;
+  customTitle?: string;
+  slug?: string;
   message?: {
     usage?: {
       cache_read_input_tokens?: number;
@@ -39,6 +42,7 @@ export interface ActiveCacheState {
 
 export interface TimerMetadata {
   sessionId: string;
+  sessionName?: string;
   transcriptPath: string;
   projectName: string;
   scheduledAt: number; // unix ms
