@@ -137,11 +137,10 @@ Settings are stored at `~/.config/cc-cache-alert/config.json`:
 ### 1. Telegram Notification Alert
 ![Telegram Notification](assets/3.png)
 
-### 2. Live Terminal Statusline (`ccstatusline` Companion)
-![Statusline Indicator](assets/1.png)
+### 2. ccstatusline Setup and Live Preview
+![ccstatusline Live Statusline](assets/1.png)
 
-### 3. Interactive Setup & Live Status
-![Setup and Status](assets/2.png)
+![Interactive Setup and Status](assets/2.png)
 
 ---
 
