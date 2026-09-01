@@ -7,6 +7,15 @@ import { sendTelegramMessage, verifyTelegramCredentials } from './telegram.js';
 import { installClaudeHooks, uninstallClaudeHooks, areHooksInstalled } from './hooks.js';
 import { scheduleTimer, cancelTimer, executeTimer, listActiveTimers } from './timer-daemon.js';
 import { getTranscriptCacheState, findActiveClaudeTranscripts } from './transcript.js';
+import {
+  renderWidget,
+  renderStandaloneStatusline,
+  hasCcstatuslineConfig,
+  isWidgetInstalledInCcstatusline,
+  installWidgetInCcstatusline,
+  uninstallWidgetFromCcstatusline,
+  StdinPayload
+} from './statusline.js';
 
 const program = new Command();
 
@@ -14,6 +23,17 @@ program
   .name('cc-cache-alert')
   .description('Telegram notifications before your Claude Code prompt cache expires')
   .version('1.0.0');
+
+async function readStdin(): Promise<string> {
+  let input = '';
+  process.stdin.setEncoding('utf-8');
+  if (!process.stdin.isTTY) {
+    for await (const chunk of process.stdin) {
+      input += chunk;
+    }
+  }
+  return input;
+}
 
 /**
  * Setup Wizard Command
@@ -106,7 +126,97 @@ program
       }
     }
 
+    // Check for ccstatusline configuration
+    if (hasCcstatuslineConfig()) {
+      const widgetPrompt = await prompts({
+        type: 'confirm',
+        name: 'addWidget',
+        message: 'Detected ccstatusline! Would you like to add the cc-cache-alert indicator widget to your statusline?',
+        initial: true,
+      });
+
+      if (widgetPrompt.addWidget) {
+        const widgetRes = installWidgetInCcstatusline();
+        if (widgetRes.success) {
+          console.log(pc.green(`✓ ${widgetRes.message}`));
+        } else {
+          console.log(pc.red(`❌ ${widgetRes.message}`));
+        }
+      }
+    }
+
     console.log(pc.cyan('\n🎉 Setup complete! You are ready to go.\n'));
+  });
+
+/**
+ * Statusline Widget (Called by ccstatusline custom-command)
+ */
+program
+  .command('widget')
+  .description('Output compact widget text for ccstatusline')
+  .action(async () => {
+    let payload: StdinPayload | undefined;
+    const input = await readStdin();
+    if (input.trim()) {
+      try {
+        payload = JSON.parse(input);
+      } catch {
+        // ignore
+      }
+    }
+
+    const output = renderWidget(payload);
+    if (output) {
+      process.stdout.write(output);
+    }
+  });
+
+/**
+ * Standalone Statusline (For users without ccstatusline)
+ */
+program
+  .command('statusline')
+  .description('Render standalone statusline for Claude Code')
+  .action(async () => {
+    let payload: StdinPayload | undefined;
+    const input = await readStdin();
+    if (input.trim()) {
+      try {
+        payload = JSON.parse(input);
+      } catch {
+        // ignore
+      }
+    }
+
+    const output = renderStandaloneStatusline(payload);
+    process.stdout.write(output + '\n');
+  });
+
+/**
+ * Install / Uninstall Widget in ccstatusline
+ */
+program
+  .command('install-widget')
+  .description('Add cc-cache-alert widget to ~/.config/ccstatusline/settings.json')
+  .action(() => {
+    const res = installWidgetInCcstatusline();
+    if (res.success) {
+      console.log(pc.green(`✓ ${res.message}`));
+    } else {
+      console.log(pc.red(`❌ ${res.message}`));
+    }
+  });
+
+program
+  .command('uninstall-widget')
+  .description('Remove cc-cache-alert widget from ~/.config/ccstatusline/settings.json')
+  .action(() => {
+    const res = uninstallWidgetFromCcstatusline();
+    if (res.success) {
+      console.log(pc.green(`✓ ${res.message}`));
+    } else {
+      console.log(pc.red(`❌ ${res.message}`));
+    }
   });
 
 /**
@@ -145,10 +255,12 @@ program
   .action(() => {
     const config = loadConfig();
     const hooksActive = areHooksInstalled();
+    const widgetInstalled = isWidgetInstalledInCcstatusline();
 
     console.log(pc.bold(pc.cyan('\n📊 cc-cache-alert Status\n')));
     console.log(`• Telegram:        ${config.telegram.enabled && config.telegram.botToken ? pc.green('Configured') : pc.red('Not configured')}`);
     console.log(`• Claude Hooks:    ${hooksActive ? pc.green('Installed (~/.claude/settings.json)') : pc.yellow('Not installed')}`);
+    console.log(`• Statusline Widget: ${widgetInstalled ? pc.green('Installed in ccstatusline') : pc.gray('Not installed')}`);
     console.log(`• Cache TTL:       ${pc.white(config.cache.ttlSeconds >= 3600 ? `${config.cache.ttlSeconds / 3600}h` : `${config.cache.ttlSeconds / 60}m`)}`);
     console.log(`• Alert Threshold: ${pc.white(`${config.cache.alertThresholdPercent}% remaining`)} (~${Math.round((config.cache.ttlSeconds * config.cache.alertThresholdPercent) / 6000)}m)`);
 
@@ -223,15 +335,7 @@ program
     const config = loadConfig();
     if (!config.telegram.enabled || !config.telegram.botToken) return;
 
-    // Read payload from stdin if available or inspect active transcripts
-    let inputPayload = '';
-    process.stdin.setEncoding('utf-8');
-    if (!process.stdin.isTTY) {
-      for await (const chunk of process.stdin) {
-        inputPayload += chunk;
-      }
-    }
-
+    const inputPayload = await readStdin();
     let transcriptPath = '';
     let sessionId = '';
     let projectName = '';
@@ -277,15 +381,7 @@ program
   .command('on-submit')
   .description('Internal hook called when user submits a new prompt')
   .action(async () => {
-    // Read payload or find active session and cancel pending timer
-    let inputPayload = '';
-    process.stdin.setEncoding('utf-8');
-    if (!process.stdin.isTTY) {
-      for await (const chunk of process.stdin) {
-        inputPayload += chunk;
-      }
-    }
-
+    const inputPayload = await readStdin();
     let sessionId = '';
     if (inputPayload.trim()) {
       try {
@@ -318,10 +414,7 @@ program
     const delaySec = Number.parseInt(delaySecondsStr, 10);
     if (Number.isNaN(delaySec) || delaySec <= 0) return;
 
-    // Sleep for delaySeconds
     await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
-
-    // Execute check and Telegram alert
     await executeTimer(sessionId);
   });
 

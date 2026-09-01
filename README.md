@@ -1,8 +1,8 @@
 # cc-cache-alert 🔔
 
-> Telegram alerts before your **Claude Code** prompt cache expires (1-hour & 5-minute TTL).
+> Telegram alerts before your **Claude Code** prompt cache expires (1-hour & 5-minute TTL) with CLI statusline indicator.
 
-Never let your prompt cache go cold while you step away from your terminal. `cc-cache-alert` tracks your Claude Code session in real time and sends a notification to your phone when cache expiration approaches, saving you ~90% on input tokens and eliminating cold-start latency.
+Never let your prompt cache go cold while you step away from your terminal. `cc-cache-alert` monitors your Claude Code session in real time, sends an alert to your phone before cache eviction, and provides an indicator in your terminal statusline.
 
 ---
 
@@ -10,6 +10,9 @@ Never let your prompt cache go cold while you step away from your terminal. `cc-
 
 - 📲 **Telegram Notifications:** Alerts your phone with the project name, session ID, and remaining time before cache eviction.
 - ⏱️ **Supports 1-Hour & 5-Minute TTL:** Configured for Anthropic's extended 1-hour cache breakpoints (or standard 5m).
+- 📊 **CLI Statusline Indicator:** 
+  - Plugs natively into `ccstatusline` via `cc-cache-alert install-widget`.
+  - Also works as a standalone statusline for users without `ccstatusline`.
 - 🎯 **Smart Reverse Tail Scanner:** Reads only the last 32 KB of Claude Code transcripts with zero performance overhead.
 - 🔄 **Auto-Cancelling Timers:** As soon as you type or submit a prompt, pending alert timers are automatically canceled.
 - ⚙️ **One-Command Setup Wizard:** Interactive setup wizard that configures Telegram credentials and installs Claude Code hooks in `~/.claude/settings.json`.
@@ -29,58 +32,62 @@ The wizard will:
 2. Send a test ping to verify your Telegram connection.
 3. Configure your Cache TTL (defaults to `1 hour` / `3600s`) and Alert Threshold (defaults to `20%` / 12 mins).
 4. Automatically register the `Stop` and `UserPromptSubmit` hooks in `~/.claude/settings.json`.
+5. Detect if `ccstatusline` is installed and offer to add the alert indicator widget!
+
+---
+
+## 📊 Statusline Integration (Choice A)
+
+### With `ccstatusline`:
+Run:
+```bash
+cc-cache-alert install-widget
+```
+This automatically places the indicator right next to your `cache-timer` in `~/.config/ccstatusline/settings.json`. It will render:
+```text
+[Sonnet 4.6]  [🟢 54:12]  [🔔 34m]  [Session $0.42]
+                            ▲
+                            └── Time until Telegram alert triggers
+```
+
+### Without `ccstatusline` (Standalone Statusline):
+In `~/.claude/settings.json`:
+```json
+"statusLine": {
+  "type": "command",
+  "command": "cc-cache-alert statusline"
+}
+```
+Renders a clean, lightweight statusline directly from Claude Code:
+```text
+Claude 3.7 Sonnet │ 🟢 Cache: ~52m │ 🔔 34m │ $0.42
+```
 
 ---
 
 ## 💻 CLI Commands
 
 ```bash
-# Run interactive setup & install hooks
-npx cc-cache-alert setup
+# Run interactive setup wizard
+cc-cache-alert setup
 
 # Send a test alert to your Telegram chat
-npx cc-cache-alert test
+cc-cache-alert test
 
-# View active Claude sessions and cache expiration countdowns
-npx cc-cache-alert status
+# View active Claude sessions, cache countdowns, and timers
+cc-cache-alert status
+
+# Add widget to ~/.config/ccstatusline/settings.json
+cc-cache-alert install-widget
+
+# Remove widget from ccstatusline
+cc-cache-alert uninstall-widget
 
 # Manually install hooks into ~/.claude/settings.json
-npx cc-cache-alert install
+cc-cache-alert install
 
 # Remove hooks from ~/.claude/settings.json
-npx cc-cache-alert uninstall
-```
-
----
-
-## 🏗️ How It Works
-
-`cc-cache-alert` integrates directly into Claude Code's native lifecycle hooks:
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                       Claude Code CLI                       │
-└───────┬─────────────────────────────────────────────▲───────┘
-        │ (1) Turn Finishes                           │ (4) User replies
-        ▼                                             │
-┌──────────────────────────────┐              ┌───────┴──────────────┐
-│ Hook: Stop                   │              │ Hook: UserPromptSubmit
-│ `cc-cache-alert on-stop`     │              │ `cc-cache-alert      │
-└───────┬──────────────────────┘              │  on-submit`          │
-        │ Spawns detached timer               └───────▲──────────────┘
-        ▼                                             │ Cancels timer
-┌──────────────────────────────────────────────┐      │
-│ Detached Background Timer (48 mins)          ├──────┘
-│ • Sleeps in background                       │
-│ • Validates transcript is still idle         │
-└───────┬──────────────────────────────────────┘
-        │ (3) 48 mins elapsed (12 mins left)
-        ▼
-┌──────────────────────────────────────────────┐
-│ Telegram Notification 📲                     │
-│ ⚠️ Claude Code cache expiring in ~12m!       │
-│ Project: my-app | Session: 6ed6c317          │
-└──────────────────────────────────────────────┘
+cc-cache-alert uninstall
 ```
 
 ---
@@ -106,25 +113,6 @@ Settings are stored at `~/.config/cc-cache-alert/config.json`:
     "includeSessionId": true
   }
 }
-```
-
----
-
-## 🧪 Development & Testing
-
-```bash
-# Clone the repository
-git clone https://github.com/candiesdoodle/cc-cache-alert.git
-cd cc-cache-alert
-
-# Install dependencies
-npm install
-
-# Run unit tests
-npm test
-
-# Build TypeScript to dist/
-npm run build
 ```
 
 ---
