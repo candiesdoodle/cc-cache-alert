@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import prompts from 'prompts';
 import { loadConfig, saveConfig, CONFIG_FILE } from './config.js';
-import { sendTelegramMessage, verifyTelegramCredentials } from './telegram.js';
+import { sendTelegramMessage, verifyTelegramCredentials, formatCacheAlertMessage } from './telegram.js';
 import { installClaudeHooks, uninstallClaudeHooks, areHooksInstalled } from './hooks.js';
 import { scheduleTimer, cancelTimer, executeTimer, listActiveTimers, restartAllTimers } from './timer-daemon.js';
 import { getTranscriptCacheState, findActiveClaudeTranscripts, extractSessionName } from './transcript.js';
@@ -226,23 +226,50 @@ program
  */
 program
   .command('test')
-  .description('Send a test alert to your Telegram chat')
-  .action(async () => {
+  .description('Send a test alert to your Telegram chat (shows authentic cache notification)')
+  .option('--simple', 'Send simple connectivity ping instead of full alert preview')
+  .action(async (options: { simple?: boolean }) => {
     const config = loadConfig();
     if (!config.telegram.botToken || !config.telegram.chatId) {
       console.log(pc.red('❌ Telegram is not configured yet. Run `cc-cache-alert setup` first.'));
       return;
     }
 
-    console.log(pc.gray('Sending test notification...'));
+    console.log(pc.gray('Sending notification to Telegram...'));
+
+    let message = '';
+    if (options.simple) {
+      message = '🔔 *cc-cache-alert test notification*\n\nEverything is working properly!';
+    } else {
+      const active = findActiveClaudeTranscripts();
+      const project = active[0]?.project ? active[0].project.replace(/^-home-[^-]+-/, '') : 'my-project';
+      const sessionName = active[0]?.sessionName || 'feature-branch';
+      const thresholdMins = Math.round(
+        (config.cache.ttlSeconds * (config.cache.alertThresholdPercent / 100)) / 60
+      );
+      const ttlLabel =
+        config.cache.ttlSeconds >= 3600
+          ? `${config.cache.ttlSeconds / 3600}h`
+          : `${config.cache.ttlSeconds / 60}m`;
+
+      message = formatCacheAlertMessage({
+        project: config.notifications.includeProjectName ? project : undefined,
+        sessionName: config.notifications.includeSessionName ? sessionName : undefined,
+        remainingMinutes: thresholdMins,
+        remainingSeconds: thresholdMins * 60,
+        ttlLabel,
+      });
+    }
+
     const res = await sendTelegramMessage({
       botToken: config.telegram.botToken,
       chatId: config.telegram.chatId,
-      message: '🔔 *cc-cache-alert test notification*\n\nEverything is working properly!',
+      message,
     });
 
     if (res.ok) {
-      console.log(pc.green('✓ Test notification sent successfully to Telegram!'));
+      console.log(pc.green('✓ Notification sent successfully to Telegram!'));
+      console.log(pc.gray('\nDelivered Message:\n' + message + '\n'));
     } else {
       console.log(pc.red(`❌ Failed to send message: ${res.description}`));
     }
