@@ -1,0 +1,48 @@
+{
+  "name": "cc-cache-alert",
+  "version": "1.0.0",
+  "description": "Telegram alerts before your Claude Code prompt cache expires (1h & 5m TTL).",
+  "main": "dist/index.js",
+  "bin": {
+    "cc-cache-alert": "./dist/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "prompt-caching",
+    "telegram",
+    "notification",
+    "alert",
+    "anthropic",
+    "ai"
+  ],
+  "author": "candiesdoodle",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/prompts": "^2.4.9",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "picocolors": "^1.1.1",
+    "prompts": "^2.4.2"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
