@@ -23,7 +23,7 @@ const program = new Command();
 program
   .name('cc-cache-alert')
   .description('Telegram notifications before your Claude Code prompt cache expires')
-  .version('1.0.1')
+  .version('1.0.2')
   .addHelpText('after', `\nConfiguration:\n  Config file: ${CONFIG_FILE}\n`);
 
 async function readStdin(): Promise<string> {
