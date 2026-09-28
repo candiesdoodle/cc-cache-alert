@@ -1,12 +1,13 @@
 #!/usr/bin/env node
+import * as path from 'path';
 import { Command } from 'commander';
 import pc from 'picocolors';
 import prompts from 'prompts';
 import { loadConfig, saveConfig, CONFIG_FILE } from './config.js';
 import { sendTelegramMessage, verifyTelegramCredentials, formatCacheAlertMessage } from './telegram.js';
 import { installClaudeHooks, uninstallClaudeHooks, areHooksInstalled } from './hooks.js';
-import { scheduleTimer, cancelTimer, executeTimer, listActiveTimers, restartAllTimers } from './timer-daemon.js';
-import { getTranscriptCacheState, findActiveClaudeTranscripts, extractSessionName } from './transcript.js';
+import { scheduleTimer, cancelTimer, executeTimer, listActiveTimers, restartAllTimers, logDaemon } from './timer-daemon.js';
+import { getTranscriptCacheState, findActiveClaudeTranscripts, extractSessionName, extractProjectName } from './transcript.js';
 import {
   renderWidget,
   renderStandaloneStatusline,
@@ -316,6 +317,8 @@ program
         let statusStr = '';
         if (state.isWorking) {
           statusStr = pc.green('🔥 WORKING (Cache Hot)');
+        } else if (state.isCompacted) {
+          statusStr = pc.gray('♻️ RESET (/compact)');
         } else if (state.isExpired) {
           statusStr = pc.gray('❄️ COLD (Expired)');
         } else if (state.isExpiringSoon) {
@@ -393,7 +396,7 @@ program
         const parsed = JSON.parse(inputPayload);
         transcriptPath = parsed.transcript_path || parsed.transcriptPath || '';
         sessionId = parsed.session_id || parsed.sessionId || '';
-        projectName = parsed.project_name || parsed.projectName || '';
+        projectName = parsed.cwd ? path.basename(parsed.cwd) : '';
       } catch {
         // ignore
       }
@@ -409,6 +412,7 @@ program
     }
 
     if (!transcriptPath || !sessionId) return;
+    if (!projectName) projectName = extractProjectName(transcriptPath);
 
     const state = getTranscriptCacheState(transcriptPath, config.cache.ttlSeconds, config.cache.alertThresholdPercent);
     if (!state.lastAssistantTime) return;
@@ -451,6 +455,21 @@ program
 
     if (sessionId) {
       cancelTimer(sessionId);
+    }
+  });
+
+program
+  .command('on-reset', { hidden: true })
+  .description('Internal hook called on /compact (SessionStart:compact) and /clear (SessionEnd:clear)')
+  .action(async () => {
+    const inputPayload = await readStdin();
+    try {
+      const sessionId = JSON.parse(inputPayload).session_id;
+      if (sessionId && cancelTimer(sessionId)) {
+        logDaemon(`[Reset] Cache reset by /compact or /clear, timer cancelled for ${String(sessionId).slice(0, 8)}`);
+      }
+    } catch {
+      // ignore
     }
   });
 

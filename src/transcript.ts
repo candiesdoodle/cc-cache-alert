@@ -5,7 +5,10 @@ import type { TranscriptEntry, ActiveCacheState } from './types.js';
 
 const INITIAL_TAIL_BYTES = 32768; // 32KB
 const SAFETY_MARGIN_SECONDS = 5;
-const IN_FLIGHT_TURN_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_IN_FLIGHT_TURN_MAX_AGE_MS = 3600 * 1000;
+
+// Prefixes of user records written by local slash commands (/compact, /rename, /model...), which never start an LLM turn
+const LOCAL_COMMAND_PREFIXES = ['<command-name>', '<command-message>', '<local-command-stdout>', '<local-command-stderr>', '<local-command-caveat>', '/'];
 
 /**
  * Read the last N bytes of a file.
@@ -41,12 +44,35 @@ export function hasCacheActivity(entry: TranscriptEntry): boolean {
 export interface ScannedState {
   isWorking: boolean;
   lastAssistant: Date | null;
+  isCompacted?: boolean;
+}
+
+/**
+ * True for user records that are not part of a real turn: local command wrappers/output,
+ * compaction summaries, meta caveats, and interrupt markers.
+ */
+export function isNonTurnUserEntry(entry: TranscriptEntry): boolean {
+  if (entry.isMeta === true || entry.isCompactSummary === true) return true;
+  const content = entry.message?.content;
+  let text: string | undefined;
+  if (typeof content === 'string') {
+    text = content;
+  } else if (Array.isArray(content) && content.length === 1 && content[0]?.type === 'text') {
+    text = content[0].text;
+  }
+  if (typeof text !== 'string') return false;
+  const trimmed = text.trim();
+  if (trimmed.startsWith('[Request interrupted')) return true;
+  return LOCAL_COMMAND_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
 }
 
 /**
  * Scans the reverse lines of the transcript tail.
  */
-export function scanTailForState(tail: string): ScannedState | null {
+export function scanTailForState(
+  tail: string,
+  inFlightMaxAgeMs: number = DEFAULT_IN_FLIGHT_TURN_MAX_AGE_MS
+): ScannedState | null {
   const lines = tail.split('\n').reverse();
   let turnFinished = false;
 
@@ -69,27 +95,26 @@ export function scanTailForState(tail: string): ScannedState | null {
         continue;
       }
 
-      if (entry.type === 'user' && !turnFinished) {
-        // Check if this is a local slash command (e.g. /compact, /rename) that does not produce an LLM turn
-        const rawContent = entry.message?.content;
-        let isSlashCommand = false;
-        if (typeof rawContent === 'string' && rawContent.trim().startsWith('/')) {
-          isSlashCommand = true;
-        }
+      // A compaction after the last assistant turn invalidates the cached prefix
+      if (entry.type === 'system' && entry.subtype === 'compact_boundary' && !turnFinished) {
+        return { isWorking: false, lastAssistant: null, isCompacted: true };
+      }
 
-        // Check if the user message is stale (> 5 mins old)
+      if (entry.type === 'user' && !turnFinished) {
+        if (isNonTurnUserEntry(entry)) continue;
+
+        // A prompt with no reply for longer than the TTL is a dead turn, not an in-flight one
         let isStale = false;
         if (entry.timestamp) {
           const userTime = new Date(entry.timestamp);
-          if (!Number.isNaN(userTime.getTime()) && Date.now() - userTime.getTime() > IN_FLIGHT_TURN_MAX_AGE_MS) {
+          if (!Number.isNaN(userTime.getTime()) && Date.now() - userTime.getTime() > inFlightMaxAgeMs) {
             isStale = true;
           }
         }
 
-        if (!isSlashCommand && !isStale) {
+        if (!isStale) {
           return { isWorking: true, lastAssistant: null };
         }
-        // Otherwise ignore this user record and continue looking for the last assistant turn
         continue;
       }
     } catch {
@@ -194,6 +219,7 @@ export function getTranscriptCacheState(
       remainingPercent: 0,
       isExpiringSoon: false,
       isExpired: true,
+      isCompacted: false,
     };
   }
 
@@ -201,7 +227,7 @@ export function getTranscriptCacheState(
   for (let bytes = INITIAL_TAIL_BYTES; bytes <= 524288; bytes *= 2) {
     const tail = readFileTail(transcriptPath, bytes);
     if (!tail || tail.text.length === 0) break;
-    scanned = scanTailForState(tail.text);
+    scanned = scanTailForState(tail.text, ttlSeconds * 1000);
     if (scanned || tail.isComplete) break;
   }
 
@@ -213,6 +239,7 @@ export function getTranscriptCacheState(
       remainingPercent: 0,
       isExpiringSoon: false,
       isExpired: true,
+      isCompacted: false,
     };
   }
 
@@ -224,6 +251,19 @@ export function getTranscriptCacheState(
       remainingPercent: 100,
       isExpiringSoon: false,
       isExpired: false,
+      isCompacted: false,
+    };
+  }
+
+  if (scanned.isCompacted) {
+    return {
+      isWorking: false,
+      lastAssistantTime: null,
+      remainingSeconds: 0,
+      remainingPercent: 0,
+      isExpiringSoon: false,
+      isExpired: false,
+      isCompacted: true,
     };
   }
 
@@ -235,6 +275,7 @@ export function getTranscriptCacheState(
       remainingPercent: 0,
       isExpiringSoon: false,
       isExpired: true,
+      isCompacted: false,
     };
   }
 
@@ -251,6 +292,7 @@ export function getTranscriptCacheState(
     remainingPercent: Math.round(remainingPercent),
     isExpiringSoon,
     isExpired,
+    isCompacted: false,
   };
 }
 

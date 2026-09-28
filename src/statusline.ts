@@ -56,6 +56,11 @@ export function renderWidget(payload?: StdinPayload): string {
     config.cache.alertThresholdPercent
   );
 
+  // 0. After /compact the old prefix is gone; the next turn starts a fresh cache and timer
+  if (state.isCompacted) {
+    return 'Cache 🔔 reset (compacted)';
+  }
+
   // 1. When cold (cache expired)
   if (state.isExpired) {
     return 'Alerted-Cold';
@@ -125,7 +130,10 @@ export function renderStandaloneStatusline(payload?: StdinPayload): string {
 
   const parts: string[] = [];
 
-  if (state.isExpired) {
+  if (state.isCompacted) {
+    parts.push(pc.gray('♻️ Cache: Reset by /compact'));
+    parts.push(pc.cyan('Cache 🔔 reset (compacted)'));
+  } else if (state.isExpired) {
     parts.push(pc.gray('❄️ Cache: Expired'));
     parts.push(pc.red('Alerted-Cold'));
   } else if (state.isWorking) {

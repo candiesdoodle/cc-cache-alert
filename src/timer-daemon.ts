@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { TIMERS_DIR, DAEMON_LOG_FILE, loadConfig, ensureDirs } from './config.js';
 import { getTranscriptCacheState, extractSessionName, findActiveClaudeTranscripts } from './transcript.js';
@@ -17,10 +17,36 @@ export function logDaemon(msg: string): void {
   }
 }
 
+const RETRY_DELAY_SECONDS = 20;
+
 function getTimerFilePath(sessionId: string): string {
   ensureDirs();
   const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
   return path.join(TIMERS_DIR, `${safeId}.json`);
+}
+
+/**
+ * True only if `pid` is alive and is our timer worker for this session, so a PID reused
+ * after a reboot or crash is never signalled.
+ */
+function isOurTimerProcess(pid: number, sessionId: string): boolean {
+  if (!pid || pid === process.pid) return false;
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  let cmdline = '';
+  try {
+    cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf-8').replace(/\0/g, ' ');
+  } catch {
+    try {
+      cmdline = execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf-8' });
+    } catch {
+      return false;
+    }
+  }
+  return cmdline.includes('internal-timer') && cmdline.includes(sessionId);
 }
 
 /**
@@ -85,7 +111,7 @@ export function cancelTimer(sessionId: string): boolean {
 
   try {
     const data = JSON.parse(fs.readFileSync(timerPath, 'utf-8')) as TimerMetadata;
-    if (data.pid) {
+    if (isOurTimerProcess(data.pid, sessionId)) {
       try {
         process.kill(data.pid, 'SIGTERM');
         logDaemon(`[Cancel] Killed timer process PID ${data.pid} for session ${sessionId.slice(0, 8)}`);
@@ -145,6 +171,13 @@ export async function executeTimer(sessionId: string): Promise<void> {
     return;
   }
 
+  // Compaction or expiry since scheduling: the cache this alert is about no longer matters
+  if (state.isCompacted || state.isExpired) {
+    logDaemon(`[Trigger] Skipping alert: cache ${state.isCompacted ? 'reset by /compact' : 'already cold'}`);
+    cancelTimer(sessionId);
+    return;
+  }
+
   // Send the Telegram notification
   const remainingMins = Math.max(0, Math.round(state.remainingSeconds / 60));
   const ttlLabel = metadata.ttlSeconds >= 3600 ? `${metadata.ttlSeconds / 3600}h` : `${metadata.ttlSeconds / 60}m`;
@@ -170,13 +203,24 @@ export async function executeTimer(sessionId: string): Promise<void> {
   logDaemon(`[Trigger] Telegram API Response: ${JSON.stringify(res)}`);
 
   if (!res.ok) {
-    logDaemon(`[Trigger] Telegram delivery failed (${res.description}). Rescheduling retry in 20s...`);
+    // Retry until the cache goes cold; each attempt recomputes the remaining time for its message
+    const secondsLeft = getTranscriptCacheState(
+      metadata.transcriptPath,
+      metadata.ttlSeconds,
+      config.cache.alertThresholdPercent
+    ).remainingSeconds;
+    if (secondsLeft <= RETRY_DELAY_SECONDS) {
+      logDaemon(`[Trigger] Telegram delivery failed (${res.description}). Cache goes cold in ${secondsLeft}s, giving up.`);
+      cancelTimer(sessionId);
+      return;
+    }
+    logDaemon(`[Trigger] Telegram delivery failed (${res.description}). Rescheduling retry in ${RETRY_DELAY_SECONDS}s...`);
     scheduleTimer({
       sessionId: metadata.sessionId,
       sessionName: metadata.sessionName,
       transcriptPath: metadata.transcriptPath,
       projectName: metadata.projectName,
-      delaySeconds: 20,
+      delaySeconds: RETRY_DELAY_SECONDS,
       ttlSeconds: metadata.ttlSeconds,
     });
     return;
@@ -200,14 +244,11 @@ export function listActiveTimers(): TimerMetadata[] {
         const full = path.join(TIMERS_DIR, f);
         const data = JSON.parse(fs.readFileSync(full, 'utf-8')) as TimerMetadata;
         // Verify process is still alive
-        if (data.pid) {
-          try {
-            process.kill(data.pid, 0); // test signal
-            results.push(data);
-          } catch {
-            // dead timer file, clean it up
-            fs.unlinkSync(full);
-          }
+        if (isOurTimerProcess(data.pid, data.sessionId)) {
+          results.push(data);
+        } else {
+          // dead or reused PID: stale timer file, clean it up
+          fs.unlinkSync(full);
         }
       } catch {
         // ignore

@@ -18,7 +18,10 @@ export interface AppConfig {
 
 export interface TranscriptEntry {
   type?: string;
+  subtype?: string;
   timestamp?: string;
+  isMeta?: boolean;
+  isCompactSummary?: boolean;
   isSidechain?: boolean;
   isApiErrorMessage?: boolean;
   customTitle?: string;
@@ -39,6 +42,7 @@ export interface ActiveCacheState {
   remainingPercent: number;
   isExpiringSoon: boolean; // true if remaining <= threshold
   isExpired: boolean;
+  isCompacted: boolean; // /compact ran after the last assistant turn; old cache prefix is irrelevant
 }
 
 export interface TimerMetadata {

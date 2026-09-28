@@ -20,13 +20,24 @@ export interface ClaudeSettings {
     Stop?: ClaudeHookGroup[];
     UserPromptSubmit?: ClaudeHookGroup[];
     SessionStart?: ClaudeHookGroup[];
+    SessionEnd?: ClaudeHookGroup[];
     [key: string]: unknown;
   };
   [key: string]: unknown;
 }
 
-const STOP_COMMAND = 'cc-cache-alert on-stop';
-const SUBMIT_COMMAND = 'cc-cache-alert on-submit';
+const HOOKS: Array<{ event: string; matcher?: string; command: string }> = [
+  { event: 'Stop', command: 'cc-cache-alert on-stop' },
+  { event: 'UserPromptSubmit', command: 'cc-cache-alert on-submit' },
+  // /compact keeps the session id and fires SessionStart with source "compact"
+  { event: 'SessionStart', matcher: 'compact', command: 'cc-cache-alert on-reset' },
+  // /clear fires SessionEnd with reason "clear" and the old session id, then starts a new session
+  { event: 'SessionEnd', matcher: 'clear', command: 'cc-cache-alert on-reset' },
+];
+
+function hasHook(groups: ClaudeHookGroup[] | undefined, command: string): boolean {
+  return !!groups?.some((g) => g.hooks?.some((h) => h.command?.includes(command)));
+}
 
 export function getClaudeSettings(): ClaudeSettings {
   if (!fs.existsSync(CLAUDE_SETTINGS_PATH)) {
@@ -49,59 +60,21 @@ export function saveClaudeSettings(settings: ClaudeSettings): void {
 }
 
 export function areHooksInstalled(): boolean {
-  const settings = getClaudeSettings();
-  if (!settings.hooks) return false;
-
-  const hasStop = settings.hooks.Stop?.some((group) =>
-    group.hooks?.some((h) => h.command && h.command.includes('cc-cache-alert on-stop'))
-  );
-
-  return !!hasStop;
+  const hooks = getClaudeSettings().hooks;
+  if (!hooks) return false;
+  return HOOKS.every((h) => hasHook(hooks[h.event] as ClaudeHookGroup[] | undefined, h.command));
 }
 
 export function installClaudeHooks(): { success: boolean; message: string } {
   const settings = getClaudeSettings();
-  if (!settings.hooks) {
-    settings.hooks = {};
-  }
+  const hooks = (settings.hooks ??= {});
 
-  // 1. Add Stop Hook
-  if (!settings.hooks.Stop) {
-    settings.hooks.Stop = [];
-  }
-  const stopExists = settings.hooks.Stop.some((g) =>
-    g.hooks?.some((h) => h.command?.includes('cc-cache-alert on-stop'))
-  );
-  if (!stopExists) {
-    settings.hooks.Stop.push({
-      matcher: '*',
-      hooks: [
-        {
-          type: 'command',
-          command: STOP_COMMAND,
-          timeout: 10,
-        },
-      ],
-    });
-  }
-
-  // 2. Add UserPromptSubmit Hook
-  if (!settings.hooks.UserPromptSubmit) {
-    settings.hooks.UserPromptSubmit = [];
-  }
-  const submitExists = settings.hooks.UserPromptSubmit.some((g) =>
-    g.hooks?.some((h) => h.command?.includes('cc-cache-alert on-submit'))
-  );
-  if (!submitExists) {
-    settings.hooks.UserPromptSubmit.push({
-      matcher: '*',
-      hooks: [
-        {
-          type: 'command',
-          command: SUBMIT_COMMAND,
-          timeout: 10,
-        },
-      ],
+  for (const h of HOOKS) {
+    const groups = ((hooks[h.event] as ClaudeHookGroup[] | undefined) ??= []);
+    if (hasHook(groups, h.command)) continue;
+    groups.push({
+      ...(h.matcher ? { matcher: h.matcher } : {}),
+      hooks: [{ type: 'command', command: h.command, timeout: 10 }],
     });
   }
 
@@ -119,18 +92,12 @@ export function uninstallClaudeHooks(): { success: boolean; message: string } {
     return { success: true, message: 'No hooks found in settings.json' };
   }
 
-  if (settings.hooks.Stop) {
-    settings.hooks.Stop = settings.hooks.Stop.filter(
-      (g) => !g.hooks?.some((h) => h.command?.includes('cc-cache-alert on-stop'))
-    );
-    if (settings.hooks.Stop.length === 0) delete settings.hooks.Stop;
-  }
-
-  if (settings.hooks.UserPromptSubmit) {
-    settings.hooks.UserPromptSubmit = settings.hooks.UserPromptSubmit.filter(
-      (g) => !g.hooks?.some((h) => h.command?.includes('cc-cache-alert on-submit'))
-    );
-    if (settings.hooks.UserPromptSubmit.length === 0) delete settings.hooks.UserPromptSubmit;
+  for (const event of new Set(HOOKS.map((h) => h.event))) {
+    const groups = settings.hooks[event] as ClaudeHookGroup[] | undefined;
+    if (!groups) continue;
+    const kept = groups.filter((g) => !g.hooks?.some((h) => h.command?.startsWith('cc-cache-alert ')));
+    if (kept.length === 0) delete settings.hooks[event];
+    else settings.hooks[event] = kept;
   }
 
   try {
