@@ -2,7 +2,7 @@
 
 > Telegram alerts and terminal statusline indicator before your **Claude Code CLI** prompt cache expires (1-hour & 5-minute TTL).
 
-Never let your prompt cache go cold while you step away from your terminal. Built specifically for the **Claude Code CLI** (`claude`) and inspired by the prompt cache inspection techniques in [**ccstatusline**](https://github.com/sirmalloc/ccstatusline)), `cc-cache-alert` tracks your active Claude terminal sessions in real time, alerts your phone before Anthropic evicts your cached prompt prefix, and provides a companion countdown indicator for your terminal statusline.
+Never let your prompt cache go cold while you step away from your terminal. Built specifically for the **Claude Code CLI** (`claude`) and inspired by the prompt cache inspection techniques in [**ccstatusline**](https://github.com/sirmalloc/ccstatusline), `cc-cache-alert` tracks your active Claude terminal sessions in real time, alerts your phone before Anthropic evicts your cached prompt prefix, and provides a companion countdown indicator for your terminal statusline.
 
 Saving you **~90% on input token costs** and eliminating cold-start latency across long coding sessions.
 
@@ -12,16 +12,17 @@ Saving you **~90% on input token costs** and eliminating cold-start latency acro
 
 - 💻 **Built for Claude Code CLI:** Seamlessly integrates with official `claude code` CLI via native lifecycle hooks.
 - 🧩 **ccstatusline Companion:** Integrates out of the box with [**ccstatusline**](https://github.com/sirmalloc/ccstatusline) via a dedicated companion widget (`cc-cache-alert install-widget`), or functions as a standalone statusline for users without it.
-- 📲 **Telegram Notifications:** Alerts your phone with the project name, session ID, and remaining time before cache eviction.
+- 📲 **Telegram Notifications:** Alerts your phone with the project name, session name, and remaining time before cache eviction. Failed deliveries are retried until the cache goes cold, each retry showing the actual time left.
 - ⏱️ **Supports 1-Hour & 5-Minute TTL:** Configured for Anthropic's extended 1-hour cache breakpoints (or standard 5m).
 - 📊 **Dynamic Statusline Indicator:**
   - **Active / Turn in flight:** `Cache 🔔 active`
   - **Idle / Countdown:** `Cache 🔔 in XX m` (e.g. `Cache 🔔 in 34 m`)
   - **Alert Dispatched (< 12m left):** `Alerted`
   - **Cache Expired:** `Alerted-Cold`
+  - **After `/compact`:** `Cache 🔔 reset (compacted)` until your next turn completes
   - **Standalone Mode:** Purely cache-focused (no clutter from model name or session cost).
-- 🎯 **Smart Reverse Tail Scanner:** Reads only the last 32 KB of Claude Code transcripts with zero performance overhead.
-- 🔄 **Auto-Cancelling Timers:** As soon as you type or submit a prompt, pending alert timers are automatically canceled.
+- 🎯 **Smart Reverse Tail Scanner:** Reads only the tail of Claude Code transcripts (starting at 32 KB), so it stays fast on long sessions.
+- 🔄 **Auto-Cancelling Timers:** Submitting a prompt cancels the pending alert, and the next completed turn schedules a fresh one. `/compact` and `/clear` cancel the alert too, since the old cached prefix no longer matters.
 - ⚙️ **One-Command Setup Wizard:** Interactive setup wizard that configures Telegram credentials, hooks, and statusline widgets.
 
 ---
@@ -38,8 +39,10 @@ The wizard will:
 1. Prompt for your **Telegram Bot Token** (from [@BotFather](https://t.me/BotFather)) and **Chat ID** (from [@userinfobot](https://t.me/userinfobot)).
 2. Send a test ping to verify your Telegram connection.
 3. Configure your Cache TTL (defaults to `1 hour` / `3600s`) and Alert Threshold (defaults to `20%` / 12 mins).
-4. Automatically register the `Stop` and `UserPromptSubmit` hooks in `~/.claude/settings.json`.
+4. Automatically register the `Stop`, `UserPromptSubmit`, `SessionStart` (compact) and `SessionEnd` (clear) hooks in `~/.claude/settings.json`.
 5. Detect if `ccstatusline` is installed and offer to add the alert indicator widget!
+
+> **Upgrading from 1.0.1 or earlier?** Run `cc-cache-alert install` once to register the new `/compact` and `/clear` hooks. Existing hooks are left untouched.
 
 ---
 
