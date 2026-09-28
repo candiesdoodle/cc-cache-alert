@@ -7,7 +7,7 @@ import { loadConfig, saveConfig, CONFIG_FILE } from './config.js';
 import { sendTelegramMessage, verifyTelegramCredentials, formatCacheAlertMessage } from './telegram.js';
 import { installClaudeHooks, uninstallClaudeHooks, areHooksInstalled } from './hooks.js';
 import { scheduleTimer, cancelTimer, executeTimer, listActiveTimers, restartAllTimers, logDaemon } from './timer-daemon.js';
-import { getTranscriptCacheState, findActiveClaudeTranscripts, extractSessionName, extractProjectName } from './transcript.js';
+import { getTranscriptCacheState, findActiveClaudeTranscripts, SAFETY_MARGIN_SECONDS, extractSessionName, extractProjectName } from './transcript.js';
 import {
   renderWidget,
   renderStandaloneStatusline,
@@ -414,11 +414,12 @@ program
     if (!transcriptPath || !sessionId) return;
     if (!projectName) projectName = extractProjectName(transcriptPath);
 
-    const state = getTranscriptCacheState(transcriptPath, config.cache.ttlSeconds, config.cache.alertThresholdPercent);
-    if (!state.lastAssistantTime) return;
-
-    // Delay until remaining time hits the threshold (e.g. 80% elapsed / 48 mins)
-    const alertDelaySeconds = Math.max(1, state.remainingSeconds - (config.cache.ttlSeconds * (config.cache.alertThresholdPercent / 100)));
+    // Stop means an API call just finished, so the cache was refreshed now. Claude Code flushes the
+    // transcript lazily, so at this point it can still miss this turn's records; don't read it here.
+    const alertDelaySeconds = Math.max(
+      1,
+      config.cache.ttlSeconds * (1 - config.cache.alertThresholdPercent / 100) - SAFETY_MARGIN_SECONDS
+    );
     const sessionName = extractSessionName(transcriptPath, sessionId);
 
     scheduleTimer({

@@ -4,7 +4,7 @@ import * as os from 'os';
 import type { TranscriptEntry, ActiveCacheState } from './types.js';
 
 const INITIAL_TAIL_BYTES = 32768; // 32KB
-const SAFETY_MARGIN_SECONDS = 5;
+export const SAFETY_MARGIN_SECONDS = 5;
 const DEFAULT_IN_FLIGHT_TURN_MAX_AGE_MS = 3600 * 1000;
 
 // Prefixes of user records written by local slash commands (/compact, /rename, /model...), which never start an LLM turn
